@@ -17,7 +17,18 @@ def load_audio(file_path: str | Path, target_sr: int = TARGET_SR) -> tuple[np.nd
     if not path.exists():
         raise FileNotFoundError(f"Audio file not found: {path}")
 
-    waveform, sample_rate = sf.read(path, always_2d=False)
+    try:
+        header = path.read_bytes()[:128]
+        if b"git-lfs.github.com/spec/v1" in header:
+            raise ValueError(f"Git LFS pointer file detected: {path}")
+    except OSError:
+        pass
+
+    try:
+        waveform, sample_rate = sf.read(path, always_2d=False)
+    except Exception as exc:
+        raise ValueError(f"Unreadable audio file: {path}") from exc
+
     if waveform.ndim > 1:
         waveform = np.mean(waveform, axis=1)
 

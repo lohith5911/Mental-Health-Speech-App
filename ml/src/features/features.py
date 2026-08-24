@@ -1,4 +1,4 @@
-"""Feature extraction utilities for future speech emotion recognition work."""
+"""Feature extraction utilities for speech emotion recognition work."""
 
 from __future__ import annotations
 
@@ -10,6 +10,16 @@ def extract_mfcc(waveform: np.ndarray, sample_rate: int, n_mfcc: int = 13):
     import librosa
 
     return librosa.feature.mfcc(y=waveform, sr=sample_rate, n_mfcc=n_mfcc)
+
+
+def extract_mfcc_stats(waveform: np.ndarray, sample_rate: int, n_mfcc: int = 13) -> np.ndarray:
+    """Return a fixed-length MFCC feature vector using mean/std statistics per coefficient."""
+    mfcc = extract_mfcc(waveform, sample_rate=sample_rate, n_mfcc=n_mfcc)
+    mean = np.mean(mfcc, axis=1)
+    std = np.std(mfcc, axis=1)
+    delta = np.mean(np.diff(mfcc, axis=1), axis=1) if mfcc.shape[1] > 1 else np.zeros_like(mean)
+    delta_std = np.std(np.diff(mfcc, axis=1), axis=1) if mfcc.shape[1] > 2 else np.zeros_like(mean)
+    return np.concatenate([mean, std, delta, delta_std]).astype(np.float32)
 
 
 def extract_mel_spectrogram(waveform: np.ndarray, sample_rate: int):

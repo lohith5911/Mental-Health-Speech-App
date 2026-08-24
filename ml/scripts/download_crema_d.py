@@ -51,8 +51,17 @@ def extract_wavs(zip_path: Path, output_dir: Path) -> tuple[int, int]:
 
             destination = output_dir / filename
             if destination.exists():
-                skipped += 1
-                continue
+                try:
+                    with open(destination, "rb") as existing_file:
+                        header = existing_file.read(80)
+                    if header.startswith(b"version https://git-lfs.github.com/spec/v1"):
+                        destination.unlink()
+                    else:
+                        skipped += 1
+                        continue
+                except OSError:
+                    skipped += 1
+                    continue
 
             with archive.open(member) as src, open(destination, "wb") as dst:
                 shutil.copyfileobj(src, dst)
