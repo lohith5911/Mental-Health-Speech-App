@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+*.ipynb_checkpoints/
+*.pkl
+*.joblib
+*.pt
+*.pth
+*.wav
+*.mp3
+*.ogg
+*.m4a
+*.webm
+
+# Keep the repo clean while allowing the developer to place the local CREMA-D dataset manually.
+# The actual data directory is intentionally not committed.
