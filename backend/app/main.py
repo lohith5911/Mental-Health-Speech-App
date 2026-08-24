@@ -1,11 +1,24 @@
+import shutil
+import sys
+import subprocess
+import tempfile
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from ml.src.models.emotion_model import MODEL_PATH, predict_emotion_from_file
+
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+MODEL_DIR = PROJECT_ROOT / "ml" / "models"
+SCALER_PATH = MODEL_DIR / "scaler.pkl"
+LABEL_ENCODER_PATH = MODEL_DIR / "label_encoder.pkl"
 
 ALLOWED_AUDIO_MIME_TYPES = {
     "audio/webm",
@@ -19,6 +32,7 @@ ALLOWED_AUDIO_MIME_TYPES = {
     "audio/x-m4a",
     "audio/m4a",
 }
+ALLOWED_AUDIO_SUFFIXES = {".wav", ".webm"}
 
 app = FastAPI(
     title="AI Mental Health Screening API",
@@ -79,4 +93,79 @@ async def upload_check_in(file: UploadFile = File(...)):
         "check_in_id": check_in_id,
         "status": "uploaded",
         "filename": saved_filename,
+    }
+
+
+def _convert_to_wav(source_path: Path, wav_path: Path) -> None:
+    """Convert WebM audio to a mono 16 kHz WAV using the managed FFmpeg binary."""
+    if source_path.suffix.lower() == ".wav":
+        shutil.copyfile(source_path, wav_path)
+        return
+
+    try:
+        import imageio_ffmpeg
+    except ImportError as exc:
+        raise RuntimeError("WebM audio support requires imageio-ffmpeg.") from exc
+
+    command = [
+        imageio_ffmpeg.get_ffmpeg_exe(),
+        "-y",
+        "-i",
+        str(source_path),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-f",
+        "wav",
+        str(wav_path),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0 or not wav_path.is_file():
+        raise ValueError("Unable to decode the uploaded WebM audio.")
+
+
+@app.post("/api/analyze-emotion")
+async def analyze_emotion(file: UploadFile = File(...)):
+    """Predict one emotion from an uploaded WAV or WebM recording."""
+    if file is None or not file.filename:
+        raise HTTPException(status_code=400, detail="No audio file was provided.")
+
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in ALLOWED_AUDIO_SUFFIXES:
+        raise HTTPException(status_code=415, detail="Only .wav and .webm audio files are supported.")
+
+    missing_models = [path.name for path in (MODEL_PATH, SCALER_PATH, LABEL_ENCODER_PATH) if not path.is_file()]
+    if missing_models:
+        raise HTTPException(status_code=503, detail=f"Emotion model files are missing: {', '.join(missing_models)}")
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Uploaded audio file is empty.")
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="emotion-") as temp_dir:
+            temp_path = Path(temp_dir) / f"upload{suffix}"
+            wav_path = Path(temp_dir) / "converted.wav"
+            temp_path.write_bytes(contents)
+            try:
+                _convert_to_wav(temp_path, wav_path)
+            except (ValueError, OSError, RuntimeError) as exc:
+                raise HTTPException(status_code=422, detail=f"Invalid audio file: {exc}") from exc
+
+            try:
+                prediction = predict_emotion_from_file(wav_path, model_path=MODEL_PATH)
+            except (ValueError, OSError) as exc:
+                raise HTTPException(status_code=422, detail=f"Invalid audio file: {exc}") from exc
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail="Emotion prediction failed.") from exc
+    except Exception as exc:
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail="Emotion prediction failed.") from exc
+
+    return {
+        "emotion": prediction["emotion_name"],
+        "confidence": prediction["confidence"],
     }

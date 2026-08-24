@@ -21,7 +21,19 @@ export const publicNavItems: NavItem[] = [
   { label: 'Register', path: '/register' },
 ]
 
-export type CheckInStatus = 'idle' | 'recording' | 'recorded' | 'processing'
+export type CheckInStatus =
+  | 'idle'
+  | 'recording'
+  | 'recorded'
+  | 'uploading'
+  | 'analyzing'
+  | 'success'
+  | 'error'
+
+export type EmotionAnalysisResult = {
+  emotion: string
+  confidence: number
+}
 
 export const MAX_CHECK_IN_SECONDS = 60
 

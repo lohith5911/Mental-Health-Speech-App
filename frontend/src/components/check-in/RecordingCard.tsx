@@ -1,4 +1,4 @@
-import type { CheckInStatus } from '../../types'
+import type { CheckInStatus, EmotionAnalysisResult } from '../../types'
 import MicrophoneIcon from './MicrophoneIcon'
 
 type RecordingCardProps = {
@@ -12,6 +12,7 @@ type RecordingCardProps = {
   onStop: () => void
   onRecordAgain: () => void
   onContinue: () => void
+  analysisResult: EmotionAnalysisResult | null
 }
 
 const STATUS_COPY: Record<
@@ -30,9 +31,21 @@ const STATUS_COPY: Record<
     title: 'Recording complete',
     detail: 'Listen to your recording, then continue or record again.',
   },
-  processing: {
+  uploading: {
     title: 'Uploading your recording',
-    detail: 'Your recording is being sent securely to the backend.',
+    detail: 'Your recording is being sent securely for analysis.',
+  },
+  analyzing: {
+    title: 'Analyzing your recording',
+    detail: 'Your recording is being analyzed for emotional cues.',
+  },
+  success: {
+    title: 'Analysis complete',
+    detail: 'Review the result below or record another check-in.',
+  },
+  error: {
+    title: 'Analysis could not be completed',
+    detail: 'Check your connection and try the analysis again.',
   },
 }
 
@@ -47,6 +60,7 @@ function RecordingCard({
   onStop,
   onRecordAgain,
   onContinue,
+  analysisResult,
 }: RecordingCardProps) {
   const copy = STATUS_COPY[status]
   const idleDetail = isRequestingMic
@@ -89,10 +103,20 @@ function RecordingCard({
         </p>
       ) : null}
 
-      {audioUrl && (status === 'recorded' || status === 'processing') ? (
+      {audioUrl && status !== 'idle' && status !== 'recording' ? (
         <audio className="audio-preview" controls src={audioUrl} preload="metadata">
           Your browser cannot play this audio preview.
         </audio>
+      ) : null}
+
+      {analysisResult && status === 'success' ? (
+        <div className="analysis-result" aria-live="polite">
+          <p className="analysis-label">Detected Emotion</p>
+          <p className="analysis-emotion">{analysisResult.emotion}</p>
+          <p className="analysis-confidence">
+            Confidence: <strong>{Math.round(analysisResult.confidence * 100)}%</strong>
+          </p>
+        </div>
       ) : null}
 
       {successMessage ? (
@@ -136,16 +160,26 @@ function RecordingCard({
           </>
         ) : null}
 
-        {status === 'processing' ? (
+        {status === 'uploading' || status === 'analyzing' ? (
           <>
             <div className="processing-row">
               <span className="spinner" aria-hidden="true" />
-              <span>Processing your recording…</span>
+              <span>
+                {status === 'uploading'
+                  ? 'Uploading your recording…'
+                  : 'Analyzing your recording…'}
+              </span>
             </div>
             <button className="button ghost" type="button" onClick={onRecordAgain}>
               Record Again
             </button>
           </>
+        ) : null}
+
+        {status === 'success' || status === 'error' ? (
+          <button className="button ghost" type="button" onClick={onRecordAgain}>
+            Record Again
+          </button>
         ) : null}
       </div>
     </article>

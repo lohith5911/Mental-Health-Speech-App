@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MAX_CHECK_IN_SECONDS, type CheckInStatus } from '../types'
+import {
+  MAX_CHECK_IN_SECONDS,
+  type CheckInStatus,
+  type EmotionAnalysisResult,
+} from '../types'
 
 const PREFERRED_MIME_TYPES = [
   'audio/webm;codecs=opus',
@@ -71,6 +75,7 @@ function useRecording() {
   const [mimeType, setMimeType] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [analysisResult, setAnalysisResult] = useState<EmotionAnalysisResult | null>(null)
   const [isRequestingMic, setIsRequestingMic] = useState(false)
 
   const statusRef = useRef<CheckInStatus>('idle')
@@ -120,6 +125,7 @@ function useRecording() {
     setMimeType(null)
     setErrorMessage(null)
     setSuccessMessage(null)
+    setAnalysisResult(null)
     mimeTypeRef.current = undefined
   }, [revokePreviewUrl])
 
@@ -278,7 +284,8 @@ function useRecording() {
 
     setErrorMessage(null)
     setSuccessMessage(null)
-    setStatus('processing')
+    setAnalysisResult(null)
+    setStatus('uploading')
 
     try {
       const formData = new FormData()
@@ -296,7 +303,7 @@ function useRecording() {
 
       formData.append('file', audioBlob, `check-in-${Date.now()}.${extension}`)
 
-      const response = await fetch('http://127.0.0.1:8000/api/check-ins', {
+      const response = await fetch('http://127.0.0.1:8000/api/analyze-emotion', {
         method: 'POST',
         body: formData,
       })
@@ -304,30 +311,30 @@ function useRecording() {
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null)
         throw new Error(
-          errorBody?.detail || 'The recording could not be uploaded. Please try again.',
+          errorBody?.detail || 'The recording could not be analyzed. Please try again.',
         )
       }
 
-      const payload = (await response.json()) as {
-        check_in_id?: string
-        status?: string
-        filename?: string
+      setStatus('analyzing')
+      const payload = (await response.json()) as Partial<EmotionAnalysisResult>
+
+      if (
+        typeof payload.emotion !== 'string' ||
+        typeof payload.confidence !== 'number' ||
+        !Number.isFinite(payload.confidence)
+      ) {
+        throw new Error('The backend returned an invalid emotion analysis.')
       }
 
-      if (!payload.check_in_id) {
-        throw new Error('The backend did not return a valid check-in ID.')
-      }
-
-      setSuccessMessage(
-        'Voice recording uploaded successfully. Analysis will be added in the next milestone.',
-      )
-      setStatus('recorded')
+      setAnalysisResult({ emotion: payload.emotion, confidence: payload.confidence })
+      setSuccessMessage('Emotion analysis completed.')
+      setStatus('success')
     } catch (error) {
-      setStatus('recorded')
+      setStatus('error')
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : 'The recording could not be uploaded. Check your connection and try again.',
+          : 'The recording could not be analyzed. Check your connection and try again.',
       )
     }
   }, [audioBlob])
@@ -376,6 +383,7 @@ function useRecording() {
     mimeType,
     errorMessage,
     successMessage,
+    analysisResult,
     isRequestingMic,
     startRecording,
     stopRecording,

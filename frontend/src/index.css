@@ -418,6 +418,38 @@ p {
   height: 40px;
 }
 
+.analysis-result {
+  width: min(100%, 420px);
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--teal-soft);
+}
+
+.analysis-label,
+.analysis-confidence {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.analysis-label {
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+
+.analysis-emotion {
+  margin-bottom: 4px;
+  color: var(--teal-dark);
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.recording-success {
+  color: var(--teal-dark);
+  font-size: 14px;
+}
+
 .recording-error {
   max-width: 420px;
   color: #9b3b34;
