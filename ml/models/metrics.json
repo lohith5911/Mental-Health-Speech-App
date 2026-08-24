@@ -1,0 +1,129 @@
+{
+  "dataset": {
+    "total_wav_files": 7442,
+    "train_files": 5147,
+    "validation_files": 1066,
+    "test_files": 1229,
+    "corrupted_files": 0,
+    "speaker_count": 91
+  },
+  "split": {
+    "train_speakers": 63,
+    "validation_speakers": 13,
+    "test_speakers": 15
+  },
+  "evaluation": {
+    "accuracy": 0.4434499593165175,
+    "precision": 0.4464322254840704,
+    "recall": 0.44078655670834443,
+    "f1": 0.43654758485609485,
+    "macro_f1": 0.43654758485609485,
+    "weighted_f1": 0.43818789996330554,
+    "confusion_matrix": [
+      [
+        151,
+        18,
+        8,
+        26,
+        5,
+        2
+      ],
+      [
+        44,
+        76,
+        24,
+        27,
+        21,
+        18
+      ],
+      [
+        24,
+        25,
+        83,
+        42,
+        19,
+        17
+      ],
+      [
+        57,
+        21,
+        27,
+        84,
+        14,
+        7
+      ],
+      [
+        21,
+        36,
+        22,
+        25,
+        60,
+        15
+      ],
+      [
+        14,
+        22,
+        38,
+        20,
+        25,
+        91
+      ]
+    ],
+    "per_emotion": {
+      "ANG": {
+        "precision": 0.4855305466237942,
+        "recall": 0.719047619047619,
+        "f1": 0.5796545105566219,
+        "support": 210.0
+      },
+      "DIS": {
+        "precision": 0.3838383838383838,
+        "recall": 0.3619047619047619,
+        "f1": 0.37254901960784315,
+        "support": 210.0
+      },
+      "FEA": {
+        "precision": 0.41089108910891087,
+        "recall": 0.3952380952380952,
+        "f1": 0.4029126213592233,
+        "support": 210.0
+      },
+      "HAP": {
+        "precision": 0.375,
+        "recall": 0.4,
+        "f1": 0.3870967741935484,
+        "support": 210.0
+      },
+      "NEU": {
+        "precision": 0.4166666666666667,
+        "recall": 0.33519553072625696,
+        "f1": 0.3715170278637771,
+        "support": 179.0
+      },
+      "SAD": {
+        "precision": 0.6066666666666667,
+        "recall": 0.43333333333333335,
+        "f1": 0.5055555555555555,
+        "support": 210.0
+      }
+    },
+    "label_order": [
+      "ANG",
+      "DIS",
+      "FEA",
+      "HAP",
+      "NEU",
+      "SAD"
+    ]
+  },
+  "model_path": "/Users/lohith/mental-health-speech-app/ml/models/emotion_classifier.pkl",
+  "validation_prediction_examples": {
+    "accuracy": 0.550656660412758,
+    "n_validation": 1066
+  },
+  "saved_files": {
+    "classifier": "/Users/lohith/mental-health-speech-app/ml/models/emotion_classifier.pkl",
+    "scaler": "/Users/lohith/mental-health-speech-app/ml/models/scaler.pkl",
+    "label_encoder": "/Users/lohith/mental-health-speech-app/ml/models/label_encoder.pkl"
+  }
+}

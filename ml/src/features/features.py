@@ -9,17 +9,44 @@ def extract_mfcc(waveform: np.ndarray, sample_rate: int, n_mfcc: int = 13):
     """Compute MFCCs from a waveform."""
     import librosa
 
+    waveform = np.nan_to_num(np.asarray(waveform, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
     return librosa.feature.mfcc(y=waveform, sr=sample_rate, n_mfcc=n_mfcc)
 
 
+def _summarize_feature_matrix(feature_matrix: np.ndarray) -> np.ndarray:
+    """Return mean and standard deviation statistics for each coefficient."""
+    mean = np.mean(feature_matrix, axis=1)
+    std = np.std(feature_matrix, axis=1)
+    return np.concatenate([mean, std]).astype(np.float32)
+
+
 def extract_mfcc_stats(waveform: np.ndarray, sample_rate: int, n_mfcc: int = 13) -> np.ndarray:
-    """Return a fixed-length MFCC feature vector using mean/std statistics per coefficient."""
+    """Return the original fixed-length MFCC feature vector using mean/std statistics per coefficient."""
     mfcc = extract_mfcc(waveform, sample_rate=sample_rate, n_mfcc=n_mfcc)
     mean = np.mean(mfcc, axis=1)
     std = np.std(mfcc, axis=1)
     delta = np.mean(np.diff(mfcc, axis=1), axis=1) if mfcc.shape[1] > 1 else np.zeros_like(mean)
     delta_std = np.std(np.diff(mfcc, axis=1), axis=1) if mfcc.shape[1] > 2 else np.zeros_like(mean)
-    return np.concatenate([mean, std, delta, delta_std]).astype(np.float32)
+    features = np.concatenate([mean, std, delta, delta_std]).astype(np.float32)
+    return np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def extract_mfcc_delta_stats(waveform: np.ndarray, sample_rate: int, n_mfcc: int = 13) -> np.ndarray:
+    """Return MFCC + delta + delta-delta summary features as a fixed-size 78-dimensional vector."""
+    import librosa
+
+    mfcc = extract_mfcc(waveform, sample_rate=sample_rate, n_mfcc=n_mfcc)
+    delta = librosa.feature.delta(mfcc, order=1)
+    delta_delta = librosa.feature.delta(mfcc, order=2)
+
+    features = np.concatenate(
+        [
+            _summarize_feature_matrix(mfcc),
+            _summarize_feature_matrix(delta),
+            _summarize_feature_matrix(delta_delta),
+        ]
+    )
+    return np.nan_to_num(features.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
 
 
 def extract_mel_spectrogram(waveform: np.ndarray, sample_rate: int):

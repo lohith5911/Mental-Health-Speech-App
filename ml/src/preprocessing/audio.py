@@ -35,13 +35,16 @@ def load_audio(file_path: str | Path, target_sr: int = TARGET_SR) -> tuple[np.nd
     waveform = np.asarray(waveform, dtype=np.float32)
     if waveform.size == 0:
         raise ValueError(f"Audio file is empty: {path}")
+    if not np.isfinite(waveform).all():
+        raise ValueError(f"Audio file contains non-finite samples: {path}")
 
     if sample_rate != target_sr:
         waveform = librosa.resample(waveform, orig_sr=sample_rate, target_sr=target_sr)
         sample_rate = target_sr
 
-    waveform = waveform / (np.max(np.abs(waveform)) + 1e-8)
-    waveform = np.nan_to_num(waveform, nan=0.0, posinf=0.0, neginf=0.0)
+    peak = np.max(np.abs(waveform))
+    if peak > 0:
+        waveform = waveform / peak
     return waveform, sample_rate
 
 

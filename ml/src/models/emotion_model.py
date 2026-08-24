@@ -12,17 +12,24 @@ from typing import Any
 import joblib
 import numpy as np
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
-from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from ml.src.features.features import extract_mfcc_stats
+from ml.src.features.features import extract_mfcc_delta_stats, extract_mfcc_stats
 from ml.src.preprocessing.audio import load_audio
 
 DATASET_DIR = Path(__file__).resolve().parents[2] / "data" / "raw" / "crema-d" / "AudioWAV"
-ARTIFACT_DIR = Path(__file__).resolve().parents[2] / "artifacts"
-MODEL_PATH = ARTIFACT_DIR / "emotion_pipeline.joblib"
+ARTIFACT_DIR = Path(__file__).resolve().parents[2] / "models"
+VERSION_2_ARTIFACT_DIR = ARTIFACT_DIR / "v2"
+MODEL_PATH = ARTIFACT_DIR / "emotion_classifier.pkl"
+VERSION_2_MODEL_PATH = VERSION_2_ARTIFACT_DIR / "emotion_classifier.pkl"
+SCALER_PATH = ARTIFACT_DIR / "scaler.pkl"
+VERSION_2_SCALER_PATH = VERSION_2_ARTIFACT_DIR / "scaler.pkl"
+LABEL_ENCODER_PATH = ARTIFACT_DIR / "label_encoder.pkl"
+VERSION_2_LABEL_ENCODER_PATH = VERSION_2_ARTIFACT_DIR / "label_encoder.pkl"
 METRICS_PATH = ARTIFACT_DIR / "metrics.json"
+VERSION_2_METRICS_PATH = VERSION_2_ARTIFACT_DIR / "metrics.json"
 
 EMOTION_MAP = {
     "ANG": "angry",
@@ -73,8 +80,8 @@ def list_audio_files(data_dir: Path) -> list[Path]:
 
 def build_speaker_aware_split(files: list[Path], seed: int = 42, val_ratio: float = 0.15, test_ratio: float = 0.15) -> dict[str, list[Path]]:
     """Split by speaker ID so each speaker appears in only one split."""
-    if not 0 < val_ratio < 1 or not 0 < test_ratio < 1:
-        raise ValueError("Validation and test ratios must be between 0 and 1.")
+    if not 0 < val_ratio < 1 or not 0 < test_ratio < 1 or val_ratio + test_ratio >= 1:
+        raise ValueError("Validation and test ratios must be between 0 and 1 and sum to less than 1.")
 
     speaker_to_files: dict[str, list[Path]] = defaultdict(list)
     for file_path in files:
@@ -85,8 +92,8 @@ def build_speaker_aware_split(files: list[Path], seed: int = 42, val_ratio: floa
     rng.shuffle(speakers)
 
     total_speakers = len(speakers)
-    train_end = math.floor(total_speakers * 0.70)
-    val_end = train_end + math.floor(total_speakers * 0.15)
+    train_end = math.floor(total_speakers * (1 - val_ratio - test_ratio))
+    val_end = train_end + math.floor(total_speakers * val_ratio)
 
     train_speakers = speakers[:train_end]
     validation_speakers = speakers[train_end:val_end]
@@ -100,8 +107,21 @@ def build_speaker_aware_split(files: list[Path], seed: int = 42, val_ratio: floa
     return split
 
 
-def load_feature_matrix(files: list[Path]) -> tuple[np.ndarray, list[str], list[str]]:
-    """Extract MFCC statistics from audio files and return arrays plus metadata."""
+def load_cremad_dataset(data_dir: Path = DATASET_DIR) -> tuple[np.ndarray, np.ndarray]:
+    """Load CREMA-D audio features and emotion codes as machine-learning arrays."""
+    files = list_audio_files(data_dir)
+    features, labels, corrupted = load_feature_matrix(files, data_dir=data_dir)
+    if corrupted:
+        raise ValueError(f"Unable to load {len(corrupted)} CREMA-D audio files.")
+    return features, np.asarray(labels)
+
+
+def load_feature_matrix(
+    files: list[Path],
+    data_dir: Path = DATASET_DIR,
+    feature_extractor: Any = extract_mfcc_stats,
+) -> tuple[np.ndarray, list[str], list[str]]:
+    """Extract fixed-size audio features from files and return arrays plus metadata."""
     features: list[np.ndarray] = []
     labels: list[str] = []
     corrupted: list[str] = []
@@ -109,16 +129,18 @@ def load_feature_matrix(files: list[Path]) -> tuple[np.ndarray, list[str], list[
     for file_path in files:
         emotion = parse_emotion_from_filename(file_path.name)
         if emotion is None:
-            corrupted.append(str(file_path.relative_to(DATASET_DIR)))
+            corrupted.append(str(file_path.relative_to(data_dir)))
             continue
 
         try:
             waveform, sample_rate = load_audio(file_path)
-            feature_vector = extract_mfcc_stats(waveform, sample_rate=sample_rate, n_mfcc=13)
+            feature_vector = feature_extractor(waveform, sample_rate=sample_rate, n_mfcc=13)
+            if feature_vector.shape[0] == 0 or not np.isfinite(feature_vector).all():
+                raise ValueError(f"Feature vector for {file_path} is invalid")
             features.append(feature_vector)
             labels.append(emotion)
         except Exception:
-            corrupted.append(str(file_path.relative_to(DATASET_DIR)))
+            corrupted.append(str(file_path.relative_to(data_dir)))
 
     if not features:
         raise ValueError("No valid audio features were extracted from the dataset.")
@@ -167,58 +189,47 @@ def compute_classification_metrics(y_true: list[str], y_pred: list[str]) -> dict
 
 
 def train_emotion_model(data_dir: Path = DATASET_DIR, artifact_dir: Path = ARTIFACT_DIR, seed: int = 42) -> dict[str, Any]:
-    """Train a speaker-aware SVM pipeline and save the model artifact."""
+    """Train the original baseline speaker-aware scaled SVM and save separate model artifacts."""
     all_files = list_audio_files(data_dir)
     split = build_speaker_aware_split(all_files, seed=seed)
 
-    train_X, train_y, train_corrupt = load_feature_matrix(split["train"])
-    val_X, val_y, val_corrupt = load_feature_matrix(split["validation"])
-    test_X, test_y, test_corrupt = load_feature_matrix(split["test"])
+    train_X, train_y, train_corrupt = load_feature_matrix(split["train"], feature_extractor=extract_mfcc_stats)
+    val_X, val_y, val_corrupt = load_feature_matrix(split["validation"], feature_extractor=extract_mfcc_stats)
+    test_X, test_y, test_corrupt = load_feature_matrix(split["test"], feature_extractor=extract_mfcc_stats)
 
-    labels = sorted(set(train_y + val_y + test_y))
-    label_index = {label: idx for idx, label in enumerate(labels)}
-    label_mapping = {label: EMOTION_MAP[label] for label in labels}
+    label_encoder = LabelEncoder()
+    train_y_encoded = label_encoder.fit_transform(train_y)
+    val_y_encoded = label_encoder.transform(val_y)
+    test_y_encoded = label_encoder.transform(test_y)
 
-    model = Pipeline(
-        steps=[
-            ("scaler", StandardScaler()),
-            (
-                "classifier",
-                SVC(
-                    kernel="rbf",
-                    C=5.0,
-                    gamma="scale",
-                    class_weight="balanced",
-                    probability=True,
-                    random_state=seed,
-                ),
-            ),
-        ]
+    scaler = StandardScaler()
+    train_X_scaled = scaler.fit_transform(train_X)
+    val_X_scaled = scaler.transform(val_X)
+    test_X_scaled = scaler.transform(test_X)
+
+    classifier = SVC(
+        kernel="rbf",
+        C=5.0,
+        gamma="scale",
+        class_weight="balanced",
+        probability=True,
+        random_state=seed,
     )
+    classifier.fit(train_X_scaled, train_y_encoded)
 
-    model.fit(train_X, train_y)
-
-    val_pred = model.predict(val_X)
-    test_pred = model.predict(test_X)
-    metrics = compute_classification_metrics(test_y, test_pred)
+    val_pred = classifier.predict(val_X_scaled)
+    test_pred = classifier.predict(test_X_scaled)
+    metrics = compute_classification_metrics(test_y, label_encoder.inverse_transform(test_pred).tolist())
 
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    artifact_payload = {
-        "pipeline": model,
-        "label_mapping": label_mapping,
-        "feature_config": {"n_mfcc": 13, "feature_dim": train_X.shape[1], "target_sr": 16000},
-        "emotion_order": EMOTION_ORDER,
-        "speakers": {
-            "train": len({parse_speaker_id(path.name) for path in split["train"]}),
-            "validation": len({parse_speaker_id(path.name) for path in split["validation"]}),
-            "test": len({parse_speaker_id(path.name) for path in split["test"]}),
-        },
-        "corrupted": train_corrupt + val_corrupt + test_corrupt,
-    }
-
-    joblib.dump(artifact_payload, artifact_dir / "emotion_pipeline.joblib")
+    joblib.dump(classifier, artifact_dir / "emotion_classifier.pkl")
+    joblib.dump(scaler, artifact_dir / "scaler.pkl")
+    joblib.dump(label_encoder, artifact_dir / "label_encoder.pkl")
 
     metrics_payload = {
+        "version": "v1",
+        "feature_type": "mfcc_stats",
+        "feature_dimension": int(train_X.shape[1]),
         "dataset": {
             "total_wav_files": len(all_files),
             "train_files": len(split["train"]),
@@ -233,33 +244,118 @@ def train_emotion_model(data_dir: Path = DATASET_DIR, artifact_dir: Path = ARTIF
             "test_speakers": len({parse_speaker_id(path.name) for path in split["test"]}),
         },
         "evaluation": metrics,
-        "model_path": str(artifact_dir / "emotion_pipeline.joblib"),
+        "model_path": str(artifact_dir / "emotion_classifier.pkl"),
         "validation_prediction_examples": {
-            "accuracy": float(accuracy_score(val_y, val_pred)),
-            "n_validation": len(val_y),
+            "accuracy": float(accuracy_score(val_y_encoded, val_pred)),
+            "n_validation": len(val_y_encoded),
+        },
+        "saved_files": {
+            "classifier": str(artifact_dir / "emotion_classifier.pkl"),
+            "scaler": str(artifact_dir / "scaler.pkl"),
+            "label_encoder": str(artifact_dir / "label_encoder.pkl"),
         },
     }
-    (artifact_dir / "metrics.json").write_text(json.dumps(metrics_payload, indent=2))
+    (artifact_dir / "metrics.json").write_text(json.dumps(metrics_payload, indent=2), encoding="utf-8")
+
+    return metrics_payload
+
+
+def train_emotion_model_v2(data_dir: Path = DATASET_DIR, artifact_dir: Path = VERSION_2_ARTIFACT_DIR, seed: int = 42) -> dict[str, Any]:
+    """Train an improved speaker-aware scaled SVM using MFCC, delta, and delta-delta features."""
+    all_files = list_audio_files(data_dir)
+    split = build_speaker_aware_split(all_files, seed=seed)
+
+    train_X, train_y, train_corrupt = load_feature_matrix(split["train"], feature_extractor=extract_mfcc_delta_stats)
+    val_X, val_y, val_corrupt = load_feature_matrix(split["validation"], feature_extractor=extract_mfcc_delta_stats)
+    test_X, test_y, test_corrupt = load_feature_matrix(split["test"], feature_extractor=extract_mfcc_delta_stats)
+
+    label_encoder = LabelEncoder()
+    train_y_encoded = label_encoder.fit_transform(train_y)
+    val_y_encoded = label_encoder.transform(val_y)
+    test_y_encoded = label_encoder.transform(test_y)
+
+    scaler = StandardScaler()
+    train_X_scaled = scaler.fit_transform(train_X)
+    val_X_scaled = scaler.transform(val_X)
+    test_X_scaled = scaler.transform(test_X)
+
+    classifier = SVC(
+        kernel="rbf",
+        C=5.0,
+        gamma="scale",
+        class_weight="balanced",
+        probability=True,
+        random_state=seed,
+    )
+    classifier.fit(train_X_scaled, train_y_encoded)
+
+    val_pred = classifier.predict(val_X_scaled)
+    test_pred = classifier.predict(test_X_scaled)
+    metrics = compute_classification_metrics(test_y, label_encoder.inverse_transform(test_pred).tolist())
+
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(classifier, artifact_dir / "emotion_classifier.pkl")
+    joblib.dump(scaler, artifact_dir / "scaler.pkl")
+    joblib.dump(label_encoder, artifact_dir / "label_encoder.pkl")
+
+    metrics_payload = {
+        "version": "v2",
+        "feature_type": "mfcc_delta_delta_stats",
+        "feature_dimension": int(train_X.shape[1]),
+        "dataset": {
+            "total_wav_files": len(all_files),
+            "train_files": len(split["train"]),
+            "validation_files": len(split["validation"]),
+            "test_files": len(split["test"]),
+            "corrupted_files": len(train_corrupt + val_corrupt + test_corrupt),
+            "speaker_count": len({parse_speaker_id(path.name) for path in all_files}),
+        },
+        "split": {
+            "train_speakers": len({parse_speaker_id(path.name) for path in split["train"]}),
+            "validation_speakers": len({parse_speaker_id(path.name) for path in split["validation"]}),
+            "test_speakers": len({parse_speaker_id(path.name) for path in split["test"]}),
+        },
+        "evaluation": metrics,
+        "model_path": str(artifact_dir / "emotion_classifier.pkl"),
+        "validation_prediction_examples": {
+            "accuracy": float(accuracy_score(val_y_encoded, val_pred)),
+            "n_validation": len(val_y_encoded),
+        },
+        "saved_files": {
+            "classifier": str(artifact_dir / "emotion_classifier.pkl"),
+            "scaler": str(artifact_dir / "scaler.pkl"),
+            "label_encoder": str(artifact_dir / "label_encoder.pkl"),
+        },
+    }
+    (artifact_dir / "metrics.json").write_text(json.dumps(metrics_payload, indent=2), encoding="utf-8")
 
     return metrics_payload
 
 
 def predict_emotion_from_file(audio_path: str | Path, model_path: str | Path = MODEL_PATH) -> dict[str, Any]:
-    """Predict an emotion and confidence for a single WAV file."""
-    model_bundle = joblib.load(model_path)
-    pipeline: Pipeline = model_bundle["pipeline"]
-    label_mapping: dict[str, str] = model_bundle["label_mapping"]
+    """Predict an emotion and confidence for a single WAV file using the correct feature extractor for the saved model."""
+    classifier = joblib.load(model_path)
+    artifact_dir = Path(model_path).parent
+    scaler: StandardScaler = joblib.load(artifact_dir / "scaler.pkl")
+    label_encoder: LabelEncoder = joblib.load(artifact_dir / "label_encoder.pkl")
 
     waveform, sample_rate = load_audio(audio_path)
-    feature_vector = extract_mfcc_stats(waveform, sample_rate=sample_rate, n_mfcc=13)
-    probabilities = pipeline.predict_proba(feature_vector.reshape(1, -1))[0]
+    feature_dim = int(scaler.n_features_in_)
+    feature_extractor = extract_mfcc_delta_stats if feature_dim == 78 else extract_mfcc_stats
+    feature_vector = feature_extractor(waveform, sample_rate=sample_rate, n_mfcc=13)
+    scaled_features = scaler.transform(feature_vector.reshape(1, -1))
+    probabilities = classifier.predict_proba(scaled_features)[0]
     predicted_index = int(np.argmax(probabilities))
-    predicted_label = pipeline.classes_[predicted_index]
+    predicted_encoded_label = int(classifier.classes_[predicted_index])
+    predicted_label = str(label_encoder.inverse_transform([predicted_encoded_label])[0])
     confidence = float(probabilities[predicted_index])
 
     return {
         "predicted_emotion": predicted_label,
-        "emotion_name": label_mapping.get(predicted_label, EMOTION_MAP.get(predicted_label, predicted_label)),
+        "emotion_name": EMOTION_MAP.get(predicted_label, predicted_label),
         "confidence": confidence,
-        "probabilities": {label: float(probabilities[idx]) for idx, label in enumerate(pipeline.classes_)},
+        "probabilities": {
+            str(label_encoder.inverse_transform([int(encoded_label)])[0]): float(probabilities[idx])
+            for idx, encoded_label in enumerate(classifier.classes_)
+        },
     }
