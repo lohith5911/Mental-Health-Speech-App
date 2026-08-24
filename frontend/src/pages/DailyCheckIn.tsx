@@ -25,6 +25,7 @@ function DailyCheckIn() {
         formattedTime={recording.formattedTime}
         audioUrl={recording.audioUrl}
         errorMessage={recording.errorMessage}
+        successMessage={recording.successMessage}
         isRequestingMic={recording.isRequestingMic}
         onStart={() => {
           void recording.startRecording()

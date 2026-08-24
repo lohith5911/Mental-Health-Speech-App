@@ -6,6 +6,7 @@ type RecordingCardProps = {
   formattedTime: string
   audioUrl: string | null
   errorMessage: string | null
+  successMessage: string | null
   isRequestingMic: boolean
   onStart: () => void
   onStop: () => void
@@ -30,8 +31,8 @@ const STATUS_COPY: Record<
     detail: 'Listen to your recording, then continue or record again.',
   },
   processing: {
-    title: 'Preparing your check-in',
-    detail: 'Screening analysis is not connected yet. No results are generated.',
+    title: 'Uploading your recording',
+    detail: 'Your recording is being sent securely to the backend.',
   },
 }
 
@@ -40,6 +41,7 @@ function RecordingCard({
   formattedTime,
   audioUrl,
   errorMessage,
+  successMessage,
   isRequestingMic,
   onStart,
   onStop,
@@ -91,6 +93,12 @@ function RecordingCard({
         <audio className="audio-preview" controls src={audioUrl} preload="metadata">
           Your browser cannot play this audio preview.
         </audio>
+      ) : null}
+
+      {successMessage ? (
+        <p className="recording-success" role="status">
+          {successMessage}
+        </p>
       ) : null}
 
       {errorMessage ? (

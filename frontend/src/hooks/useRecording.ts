@@ -70,9 +70,10 @@ function useRecording() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [mimeType, setMimeType] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [isRequestingMic, setIsRequestingMic] = useState(false)
 
-  const statusRef = useRef(status)
+  const statusRef = useRef<CheckInStatus>('idle')
   const streamRef = useRef<MediaStream | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -83,7 +84,9 @@ function useRecording() {
   const startLockRef = useRef(false)
   const stoppingRef = useRef(false)
 
-  statusRef.current = status
+  useEffect(() => {
+    statusRef.current = status
+  }, [status])
 
   const revokePreviewUrl = useCallback(() => {
     if (previewUrlRef.current) {
@@ -115,6 +118,8 @@ function useRecording() {
     setAudioBlob(null)
     setAudioUrl(null)
     setMimeType(null)
+    setErrorMessage(null)
+    setSuccessMessage(null)
     mimeTypeRef.current = undefined
   }, [revokePreviewUrl])
 
@@ -266,14 +271,66 @@ function useRecording() {
     setStatus('idle')
   }, [clearLiveRecorder, resetRecordingData])
 
-  const continueToProcessing = useCallback(() => {
-    if (statusRef.current !== 'recorded') {
+  const continueToProcessing = useCallback(async () => {
+    if (statusRef.current !== 'recorded' || !audioBlob) {
       return
     }
 
-    // TODO: Next milestone — upload the audio Blob to the FastAPI backend.
+    setErrorMessage(null)
+    setSuccessMessage(null)
     setStatus('processing')
-  }, [])
+
+    try {
+      const formData = new FormData()
+      const extension = audioBlob.type.includes('webm')
+        ? 'webm'
+        : audioBlob.type.includes('mp4')
+          ? 'mp4'
+          : audioBlob.type.includes('ogg')
+            ? 'ogg'
+            : audioBlob.type.includes('wav')
+              ? 'wav'
+              : audioBlob.type.includes('mpeg') || audioBlob.type.includes('mp3')
+                ? 'mp3'
+                : 'webm'
+
+      formData.append('file', audioBlob, `check-in-${Date.now()}.${extension}`)
+
+      const response = await fetch('http://127.0.0.1:8000/api/check-ins', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null)
+        throw new Error(
+          errorBody?.detail || 'The recording could not be uploaded. Please try again.',
+        )
+      }
+
+      const payload = (await response.json()) as {
+        check_in_id?: string
+        status?: string
+        filename?: string
+      }
+
+      if (!payload.check_in_id) {
+        throw new Error('The backend did not return a valid check-in ID.')
+      }
+
+      setSuccessMessage(
+        'Voice recording uploaded successfully. Analysis will be added in the next milestone.',
+      )
+      setStatus('recorded')
+    } catch (error) {
+      setStatus('recorded')
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'The recording could not be uploaded. Check your connection and try again.',
+      )
+    }
+  }, [audioBlob])
 
   useEffect(() => {
     if (status !== 'recording') {
@@ -318,6 +375,7 @@ function useRecording() {
     audioUrl,
     mimeType,
     errorMessage,
+    successMessage,
     isRequestingMic,
     startRecording,
     stopRecording,

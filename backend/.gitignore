@@ -1,4 +1,11 @@
 .venv/
+uploads/
 __pycache__/
 *.pyc
+*.wav
+*.webm
+*.mp3
+*.ogg
+*.m4a
+*.mp4
 .env
