@@ -1,0 +1,24 @@
+{
+  "n_mels": 40,
+  "n_frames": 128,
+  "learning_rate": 0.001,
+  "batch_size": 32,
+  "epochs": 25,
+  "patience": 5,
+  "dropout": 0.3,
+  "seed": 42,
+  "input_shape": [
+    1,
+    40,
+    128
+  ],
+  "n_classes": 6,
+  "label_order": [
+    "ANG",
+    "DIS",
+    "FEA",
+    "HAP",
+    "NEU",
+    "SAD"
+  ]
+}

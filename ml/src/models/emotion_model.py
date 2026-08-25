@@ -16,20 +16,25 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from ml.src.features.features import extract_mfcc_delta_stats, extract_mfcc_stats
+from ml.src.features.features import extract_acoustic_features_stats, extract_mfcc_delta_stats, extract_mfcc_stats
 from ml.src.preprocessing.audio import load_audio
 
 DATASET_DIR = Path(__file__).resolve().parents[2] / "data" / "raw" / "crema-d" / "AudioWAV"
 ARTIFACT_DIR = Path(__file__).resolve().parents[2] / "models"
 VERSION_2_ARTIFACT_DIR = ARTIFACT_DIR / "v2"
+VERSION_3_ARTIFACT_DIR = ARTIFACT_DIR / "v3"
 MODEL_PATH = ARTIFACT_DIR / "emotion_classifier.pkl"
 VERSION_2_MODEL_PATH = VERSION_2_ARTIFACT_DIR / "emotion_classifier.pkl"
+VERSION_3_MODEL_PATH = VERSION_3_ARTIFACT_DIR / "emotion_classifier.pkl"
 SCALER_PATH = ARTIFACT_DIR / "scaler.pkl"
 VERSION_2_SCALER_PATH = VERSION_2_ARTIFACT_DIR / "scaler.pkl"
+VERSION_3_SCALER_PATH = VERSION_3_ARTIFACT_DIR / "scaler.pkl"
 LABEL_ENCODER_PATH = ARTIFACT_DIR / "label_encoder.pkl"
 VERSION_2_LABEL_ENCODER_PATH = VERSION_2_ARTIFACT_DIR / "label_encoder.pkl"
+VERSION_3_LABEL_ENCODER_PATH = VERSION_3_ARTIFACT_DIR / "label_encoder.pkl"
 METRICS_PATH = ARTIFACT_DIR / "metrics.json"
 VERSION_2_METRICS_PATH = VERSION_2_ARTIFACT_DIR / "metrics.json"
+VERSION_3_METRICS_PATH = VERSION_3_ARTIFACT_DIR / "metrics.json"
 
 EMOTION_MAP = {
     "ANG": "angry",
@@ -332,6 +337,91 @@ def train_emotion_model_v2(data_dir: Path = DATASET_DIR, artifact_dir: Path = VE
     return metrics_payload
 
 
+def train_emotion_model_v3(data_dir: Path = DATASET_DIR, artifact_dir: Path = VERSION_3_ARTIFACT_DIR, seed: int = 42) -> dict[str, Any]:
+    """Train a richer speaker-aware acoustic SVM while preserving the V1/V2 split and artifacts."""
+    all_files = list_audio_files(data_dir)
+    split = build_speaker_aware_split(all_files, seed=seed)
+
+    train_X, train_y, train_corrupt = load_feature_matrix(split["train"], feature_extractor=extract_acoustic_features_stats)
+    val_X, val_y, val_corrupt = load_feature_matrix(split["validation"], feature_extractor=extract_acoustic_features_stats)
+    test_X, test_y, test_corrupt = load_feature_matrix(split["test"], feature_extractor=extract_acoustic_features_stats)
+
+    label_encoder = LabelEncoder()
+    train_y_encoded = label_encoder.fit_transform(train_y)
+    val_y_encoded = label_encoder.transform(val_y)
+    test_y_encoded = label_encoder.transform(test_y)
+
+    scaler = StandardScaler()
+    train_X_scaled = scaler.fit_transform(train_X)
+    val_X_scaled = scaler.transform(val_X)
+    test_X_scaled = scaler.transform(test_X)
+
+    classifier = SVC(
+        kernel="rbf",
+        C=5.0,
+        gamma="scale",
+        class_weight="balanced",
+        probability=True,
+        random_state=seed,
+    )
+    classifier.fit(train_X_scaled, train_y_encoded)
+
+    val_pred = classifier.predict(val_X_scaled)
+    test_pred = classifier.predict(test_X_scaled)
+    metrics = compute_classification_metrics(test_y, label_encoder.inverse_transform(test_pred).tolist())
+
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(classifier, artifact_dir / "emotion_classifier.pkl")
+    joblib.dump(scaler, artifact_dir / "scaler.pkl")
+    joblib.dump(label_encoder, artifact_dir / "label_encoder.pkl")
+
+    metrics_payload = {
+        "version": "v3",
+        "feature_type": "mfcc_delta_delta_plus_acoustic_stats",
+        "feature_dimension": int(train_X.shape[1]),
+        "feature_config": {
+            "n_mfcc": 13,
+            "summary_statistics": ["mean", "std", "min", "max"],
+            "base_features": ["mfcc", "delta_mfcc", "delta_delta_mfcc"],
+            "extra_features": [
+                "zero_crossing_rate",
+                "rms_energy",
+                "spectral_centroid",
+                "spectral_bandwidth",
+                "spectral_rolloff",
+                "chroma",
+            ],
+        },
+        "dataset": {
+            "total_wav_files": len(all_files),
+            "train_files": len(split["train"]),
+            "validation_files": len(split["validation"]),
+            "test_files": len(split["test"]),
+            "corrupted_files": len(train_corrupt + val_corrupt + test_corrupt),
+            "speaker_count": len({parse_speaker_id(path.name) for path in all_files}),
+        },
+        "split": {
+            "train_speakers": len({parse_speaker_id(path.name) for path in split["train"]}),
+            "validation_speakers": len({parse_speaker_id(path.name) for path in split["validation"]}),
+            "test_speakers": len({parse_speaker_id(path.name) for path in split["test"]}),
+        },
+        "evaluation": metrics,
+        "model_path": str(artifact_dir / "emotion_classifier.pkl"),
+        "validation_prediction_examples": {
+            "accuracy": float(accuracy_score(val_y_encoded, val_pred)),
+            "n_validation": len(val_y_encoded),
+        },
+        "saved_files": {
+            "classifier": str(artifact_dir / "emotion_classifier.pkl"),
+            "scaler": str(artifact_dir / "scaler.pkl"),
+            "label_encoder": str(artifact_dir / "label_encoder.pkl"),
+        },
+    }
+    (artifact_dir / "metrics.json").write_text(json.dumps(metrics_payload, indent=2), encoding="utf-8")
+
+    return metrics_payload
+
+
 def predict_emotion_from_file(audio_path: str | Path, model_path: str | Path = MODEL_PATH) -> dict[str, Any]:
     """Predict an emotion and confidence for a single WAV file using the correct feature extractor for the saved model."""
     classifier = joblib.load(model_path)
@@ -341,7 +431,12 @@ def predict_emotion_from_file(audio_path: str | Path, model_path: str | Path = M
 
     waveform, sample_rate = load_audio(audio_path)
     feature_dim = int(scaler.n_features_in_)
-    feature_extractor = extract_mfcc_delta_stats if feature_dim == 78 else extract_mfcc_stats
+    if feature_dim == 52:
+        feature_extractor = extract_mfcc_stats
+    elif feature_dim == 78:
+        feature_extractor = extract_mfcc_delta_stats
+    else:
+        feature_extractor = extract_acoustic_features_stats
     feature_vector = feature_extractor(waveform, sample_rate=sample_rate, n_mfcc=13)
     scaled_features = scaler.transform(feature_vector.reshape(1, -1))
     probabilities = classifier.predict_proba(scaled_features)[0]

@@ -1,0 +1,20 @@
+{
+  "model_name": "facebook/wav2vec2-base",
+  "batch_size": 16,
+  "epochs": 12,
+  "learning_rate": 0.003,
+  "weight_decay": 0.0001,
+  "patience": 4,
+  "seed": 42,
+  "embedding_dim": 768,
+  "dropout": 0.2,
+  "label_order": [
+    "ANG",
+    "DIS",
+    "FEA",
+    "HAP",
+    "NEU",
+    "SAD"
+  ],
+  "n_classes": 6
+}

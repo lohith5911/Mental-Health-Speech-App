@@ -7,14 +7,32 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
+import torch
 
-from ml.src.features.features import extract_mfcc_delta_stats, extract_mfcc_stats
+from ml.src.features.features import (
+    extract_acoustic_features_stats,
+    extract_mfcc_delta_stats,
+    extract_mfcc_stats,
+)
+from ml.src.models.cnn_emotion_model import (
+    SMALL_CNN_CONFIG,
+    CNNEmotionModel,
+    compute_log_mel_spectrogram,
+    predict_emotion_from_file_cnn,
+)
+from ml.src.models.v4_emotion_model import (
+    Wav2Vec2EmotionClassifier,
+    compute_wav2vec_embeddings,
+    predict_emotion_from_file_v4,
+)
 from ml.src.models.emotion_model import (
     build_speaker_aware_split,
     EMOTION_MAP,
     MODEL_PATH,
     VERSION_2_MODEL_PATH,
+    VERSION_3_MODEL_PATH,
     load_cremad_dataset,
+    load_feature_matrix,
     list_audio_files,
     parse_emotion_from_filename,
     parse_speaker_id,
@@ -55,11 +73,37 @@ class EmotionModelTests(unittest.TestCase):
         self.assertEqual(features.shape[0], 78)
         self.assertTrue(np.isfinite(features).all())
 
+    def test_extract_v3_acoustic_stats_shape(self):
+        waveform = np.random.randn(16000).astype(np.float32)
+        features = extract_acoustic_features_stats(waveform, sample_rate=16000, n_mfcc=13)
+        self.assertGreaterEqual(features.shape[0], 78)
+        self.assertEqual(features.ndim, 1)
+        self.assertTrue(np.isfinite(features).all())
+
     def test_extract_mfcc_stats_has_no_nan_values(self):
         waveform = np.zeros(16000, dtype=np.float32)
         waveform[0] = np.nan
         features = extract_mfcc_stats(waveform, sample_rate=16000, n_mfcc=13)
         self.assertTrue(np.isfinite(features).all())
+
+    def test_v3_feature_extractor_has_fixed_dimension(self):
+        waveform_a = np.random.RandomState(0).randn(16000).astype(np.float32)
+        waveform_b = np.random.RandomState(1).randn(16000).astype(np.float32)
+        left = extract_acoustic_features_stats(waveform_a, sample_rate=16000, n_mfcc=13)
+        right = extract_acoustic_features_stats(waveform_b, sample_rate=16000, n_mfcc=13)
+        self.assertEqual(left.shape, right.shape)
+        self.assertEqual(left.ndim, 1)
+        self.assertTrue(np.isfinite(left).all())
+        self.assertTrue(np.isfinite(right).all())
+
+    def test_v3_dataset_compatibility(self):
+        files = list_audio_files(Path(__file__).parents[1] / "data/raw/crema-d/AudioWAV")[:20]
+        feature_matrix, labels, corrupted = load_feature_matrix(files, feature_extractor=extract_acoustic_features_stats)
+        self.assertEqual(feature_matrix.shape[0], len(labels))
+        self.assertEqual(feature_matrix.ndim, 2)
+        self.assertTrue(np.isfinite(feature_matrix).all())
+        self.assertFalse(corrupted)
+        self.assertTrue(set(labels).issubset(EMOTION_MAP))
 
     def test_speaker_aware_split_has_no_overlap(self):
         files = [
@@ -111,6 +155,62 @@ class EmotionModelTests(unittest.TestCase):
     def test_inference_from_saved_v2_cremad_model(self):
         audio_path = Path(__file__).parents[1] / "data/raw/crema-d/AudioWAV/1001_DFA_ANG_XX.wav"
         result = predict_emotion_from_file(audio_path, model_path=VERSION_2_MODEL_PATH)
+        self.assertIn(result["predicted_emotion"], EMOTION_MAP)
+        self.assertGreaterEqual(result["confidence"], 0.0)
+        self.assertLessEqual(result["confidence"], 1.0)
+        self.assertTrue(np.isfinite(result["confidence"]))
+
+    def test_inference_from_saved_v3_cremad_model(self):
+        audio_path = Path(__file__).parents[1] / "data/raw/crema-d/AudioWAV/1001_DFA_ANG_XX.wav"
+        result = predict_emotion_from_file(audio_path, model_path=VERSION_3_MODEL_PATH)
+        self.assertIn(result["predicted_emotion"], EMOTION_MAP)
+        self.assertGreaterEqual(result["confidence"], 0.0)
+        self.assertLessEqual(result["confidence"], 1.0)
+        self.assertTrue(np.isfinite(result["confidence"]))
+
+    def test_mel_spectrogram_shape(self):
+        waveform, sample_rate = load_audio(Path(__file__).parents[1] / "data/raw/crema-d/AudioWAV/1001_DFA_ANG_XX.wav")
+        mel = compute_log_mel_spectrogram(waveform, sample_rate=sample_rate, n_mels=SMALL_CNN_CONFIG["n_mels"], n_frames=SMALL_CNN_CONFIG["n_frames"])
+        self.assertEqual(mel.shape, (SMALL_CNN_CONFIG["n_mels"], SMALL_CNN_CONFIG["n_frames"]))
+        self.assertTrue(np.isfinite(mel).all())
+
+    def test_cnn_model_forward_pass(self):
+        model = CNNEmotionModel(
+            n_mels=SMALL_CNN_CONFIG["n_mels"],
+            n_frames=SMALL_CNN_CONFIG["n_frames"],
+            n_classes=len(EMOTION_MAP),
+        )
+        x = torch.randn(2, 1, SMALL_CNN_CONFIG["n_mels"], SMALL_CNN_CONFIG["n_frames"])
+        logits = model(x)
+        self.assertEqual(logits.shape, (2, len(EMOTION_MAP)))
+
+    def test_cnn_label_validity(self):
+        self.assertEqual(set(EMOTION_MAP), {"ANG", "DIS", "FEA", "HAP", "NEU", "SAD"})
+
+    def test_cnn_inference_output(self):
+        audio_path = Path(__file__).parents[1] / "data/raw/crema-d/AudioWAV/1001_DFA_ANG_XX.wav"
+        result = predict_emotion_from_file_cnn(audio_path)
+        self.assertIn(result["predicted_emotion"], EMOTION_MAP)
+        self.assertGreaterEqual(result["confidence"], 0.0)
+        self.assertLessEqual(result["confidence"], 1.0)
+        self.assertTrue(np.isfinite(result["confidence"]))
+
+    def test_v4_encoder_output_shape(self):
+        audio_path = Path(__file__).parents[1] / "data/raw/crema-d/AudioWAV/1001_DFA_ANG_XX.wav"
+        embeddings = compute_wav2vec_embeddings(audio_path)
+        self.assertEqual(embeddings.ndim, 1)
+        self.assertGreater(embeddings.shape[0], 0)
+        self.assertTrue(np.isfinite(embeddings).all())
+
+    def test_v4_classifier_forward_pass(self):
+        model = Wav2Vec2EmotionClassifier(embedding_dim=768, n_classes=len(EMOTION_MAP))
+        x = torch.randn(2, 768)
+        logits = model(x)
+        self.assertEqual(logits.shape, (2, len(EMOTION_MAP)))
+
+    def test_v4_inference_output(self):
+        audio_path = Path(__file__).parents[1] / "data/raw/crema-d/AudioWAV/1001_DFA_ANG_XX.wav"
+        result = predict_emotion_from_file_v4(audio_path)
         self.assertIn(result["predicted_emotion"], EMOTION_MAP)
         self.assertGreaterEqual(result["confidence"], 0.0)
         self.assertLessEqual(result["confidence"], 1.0)

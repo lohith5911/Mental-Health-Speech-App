@@ -1,0 +1,208 @@
+{
+  "version": "v4",
+  "feature_type": "frozen_wav2vec2_base",
+  "pretrained_model": "facebook/wav2vec2-base",
+  "embedding_dimension": 768,
+  "model_size_mb": 360.0,
+  "dataset": {
+    "total_wav_files": 7442,
+    "train_files": 5147,
+    "validation_files": 1066,
+    "test_files": 1229,
+    "speaker_count": 91
+  },
+  "split": {
+    "train_speakers": 63,
+    "validation_speakers": 13,
+    "test_speakers": 15
+  },
+  "training": {
+    "epochs_run": 11,
+    "best_epoch": 7,
+    "best_validation_macro_f1": 0.5558418834678901,
+    "history": [
+      {
+        "epoch": 1,
+        "train_loss": 1.4352882989445088,
+        "validation_accuracy": 0.4371482176360225,
+        "validation_macro_f1": 0.41396259867935825
+      },
+      {
+        "epoch": 2,
+        "train_loss": 1.3375035087514369,
+        "validation_accuracy": 0.5178236397748592,
+        "validation_macro_f1": 0.5047823254203533
+      },
+      {
+        "epoch": 3,
+        "train_loss": 1.3034775884625334,
+        "validation_accuracy": 0.5093808630393997,
+        "validation_macro_f1": 0.49694776787604383
+      },
+      {
+        "epoch": 4,
+        "train_loss": 1.2683808999772397,
+        "validation_accuracy": 0.5084427767354597,
+        "validation_macro_f1": 0.49372529294303735
+      },
+      {
+        "epoch": 5,
+        "train_loss": 1.2568824359719057,
+        "validation_accuracy": 0.5347091932457786,
+        "validation_macro_f1": 0.5292516005852579
+      },
+      {
+        "epoch": 6,
+        "train_loss": 1.2334199018359924,
+        "validation_accuracy": 0.5140712945590994,
+        "validation_macro_f1": 0.49222274338877403
+      },
+      {
+        "epoch": 7,
+        "train_loss": 1.2272019475143148,
+        "validation_accuracy": 0.5525328330206379,
+        "validation_macro_f1": 0.5558418834678901
+      },
+      {
+        "epoch": 8,
+        "train_loss": 1.1988546992681042,
+        "validation_accuracy": 0.5328330206378987,
+        "validation_macro_f1": 0.5320118806673422
+      },
+      {
+        "epoch": 9,
+        "train_loss": 1.213334632216033,
+        "validation_accuracy": 0.550656660412758,
+        "validation_macro_f1": 0.5528453711454678
+      },
+      {
+        "epoch": 10,
+        "train_loss": 1.2062235867014584,
+        "validation_accuracy": 0.5525328330206379,
+        "validation_macro_f1": 0.5353735030359877
+      },
+      {
+        "epoch": 11,
+        "train_loss": 1.201317891200877,
+        "validation_accuracy": 0.5384615384615384,
+        "validation_macro_f1": 0.5313052063096261
+      }
+    ],
+    "patience": 4,
+    "learning_rate": 0.003,
+    "weight_decay": 0.0001,
+    "device": "mps",
+    "training_time_seconds": 225.87
+  },
+  "evaluation": {
+    "accuracy": 0.4955248169243287,
+    "precision": 0.5222419560519779,
+    "recall": 0.4914427595991842,
+    "f1": 0.4936295764900774,
+    "macro_f1": 0.4936295764900774,
+    "weighted_f1": 0.4952179832497916,
+    "confusion_matrix": [
+      [
+        129,
+        22,
+        12,
+        46,
+        0,
+        1
+      ],
+      [
+        20,
+        87,
+        33,
+        28,
+        19,
+        23
+      ],
+      [
+        12,
+        12,
+        130,
+        35,
+        4,
+        17
+      ],
+      [
+        25,
+        22,
+        51,
+        107,
+        4,
+        1
+      ],
+      [
+        10,
+        37,
+        13,
+        45,
+        59,
+        15
+      ],
+      [
+        8,
+        31,
+        48,
+        17,
+        9,
+        97
+      ]
+    ],
+    "per_emotion": {
+      "ANG": {
+        "precision": 0.6323529411764706,
+        "recall": 0.6142857142857143,
+        "f1": 0.6231884057971014,
+        "support": 210.0
+      },
+      "DIS": {
+        "precision": 0.41232227488151657,
+        "recall": 0.4142857142857143,
+        "f1": 0.41330166270783847,
+        "support": 210.0
+      },
+      "FEA": {
+        "precision": 0.4529616724738676,
+        "recall": 0.6190476190476191,
+        "f1": 0.5231388329979879,
+        "support": 210.0
+      },
+      "HAP": {
+        "precision": 0.38489208633093525,
+        "recall": 0.5095238095238095,
+        "f1": 0.4385245901639344,
+        "support": 210.0
+      },
+      "NEU": {
+        "precision": 0.6210526315789474,
+        "recall": 0.329608938547486,
+        "f1": 0.4306569343065693,
+        "support": 179.0
+      },
+      "SAD": {
+        "precision": 0.6298701298701299,
+        "recall": 0.46190476190476193,
+        "f1": 0.532967032967033,
+        "support": 210.0
+      }
+    },
+    "label_order": [
+      "ANG",
+      "DIS",
+      "FEA",
+      "HAP",
+      "NEU",
+      "SAD"
+    ]
+  },
+  "model_path": "/Users/lohith/mental-health-speech-app/ml/models/v4/model.pt",
+  "saved_files": {
+    "model": "/Users/lohith/mental-health-speech-app/ml/models/v4/model.pt",
+    "config": "/Users/lohith/mental-health-speech-app/ml/models/v4/config.json",
+    "label_encoder": "/Users/lohith/mental-health-speech-app/ml/models/v4/label_encoder.pkl",
+    "metrics": "/Users/lohith/mental-health-speech-app/ml/models/v4/metrics.json"
+  }
+}

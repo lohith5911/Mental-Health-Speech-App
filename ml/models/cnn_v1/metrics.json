@@ -1,0 +1,261 @@
+{
+  "version": "cnn_v1",
+  "feature_type": "log_mel_spectrogram",
+  "feature_dimension": {
+    "n_mels": 40,
+    "n_frames": 128,
+    "channels": 1
+  },
+  "model_architecture": {
+    "type": "CNN",
+    "layers": [
+      "Conv2d(1,16,3,pad=1)",
+      "ReLU",
+      "MaxPool(2)",
+      "Conv2d(16,32,3,pad=1)",
+      "ReLU",
+      "MaxPool(2)",
+      "Conv2d(32,64,3,pad=1)",
+      "ReLU",
+      "AdaptiveAvgPool",
+      "Dropout(0.3)",
+      "Linear(64,6)"
+    ]
+  },
+  "dataset": {
+    "total_wav_files": 7442,
+    "train_files": 5147,
+    "validation_files": 1066,
+    "test_files": 1229,
+    "speaker_count": 91
+  },
+  "split": {
+    "train_speakers": 63,
+    "validation_speakers": 13,
+    "test_speakers": 15
+  },
+  "training": {
+    "epochs_run": 17,
+    "best_epoch": 12,
+    "best_validation_macro_f1": 0.41054217813949556,
+    "history": [
+      {
+        "epoch": 1,
+        "train_loss": 1.7487530597248433,
+        "validation_accuracy": 0.3574108818011257,
+        "validation_macro_f1": 0.2698669181771693
+      },
+      {
+        "epoch": 2,
+        "train_loss": 1.572024280980507,
+        "validation_accuracy": 0.3517823639774859,
+        "validation_macro_f1": 0.29437371245446337
+      },
+      {
+        "epoch": 3,
+        "train_loss": 1.5153442317654628,
+        "validation_accuracy": 0.40150093808630394,
+        "validation_macro_f1": 0.35007775712333883
+      },
+      {
+        "epoch": 4,
+        "train_loss": 1.502847082866645,
+        "validation_accuracy": 0.3808630393996248,
+        "validation_macro_f1": 0.3322808006479976
+      },
+      {
+        "epoch": 5,
+        "train_loss": 1.48964800523675,
+        "validation_accuracy": 0.3808630393996248,
+        "validation_macro_f1": 0.32566532227543515
+      },
+      {
+        "epoch": 6,
+        "train_loss": 1.4664968503928333,
+        "validation_accuracy": 0.40619136960600377,
+        "validation_macro_f1": 0.36870636084534
+      },
+      {
+        "epoch": 7,
+        "train_loss": 1.455000544927135,
+        "validation_accuracy": 0.40150093808630394,
+        "validation_macro_f1": 0.3696126620701588
+      },
+      {
+        "epoch": 8,
+        "train_loss": 1.4616036555781868,
+        "validation_accuracy": 0.39587242026266417,
+        "validation_macro_f1": 0.35105128341115766
+      },
+      {
+        "epoch": 9,
+        "train_loss": 1.4429657725813967,
+        "validation_accuracy": 0.4099437148217636,
+        "validation_macro_f1": 0.3759639257403669
+      },
+      {
+        "epoch": 10,
+        "train_loss": 1.4391147238867623,
+        "validation_accuracy": 0.4202626641651032,
+        "validation_macro_f1": 0.38718979428926775
+      },
+      {
+        "epoch": 11,
+        "train_loss": 1.4244975747529023,
+        "validation_accuracy": 0.43058161350844276,
+        "validation_macro_f1": 0.40045564086835833
+      },
+      {
+        "epoch": 12,
+        "train_loss": 1.4291756227149726,
+        "validation_accuracy": 0.4343339587242026,
+        "validation_macro_f1": 0.41054217813949556
+      },
+      {
+        "epoch": 13,
+        "train_loss": 1.4119684540707131,
+        "validation_accuracy": 0.4371482176360225,
+        "validation_macro_f1": 0.40574025243755824
+      },
+      {
+        "epoch": 14,
+        "train_loss": 1.3996583275173022,
+        "validation_accuracy": 0.42213883677298314,
+        "validation_macro_f1": 0.3996546398787418
+      },
+      {
+        "epoch": 15,
+        "train_loss": 1.3972637127645267,
+        "validation_accuracy": 0.40619136960600377,
+        "validation_macro_f1": 0.38109197736733064
+      },
+      {
+        "epoch": 16,
+        "train_loss": 1.3957754840021548,
+        "validation_accuracy": 0.4146341463414634,
+        "validation_macro_f1": 0.3875284645511338
+      },
+      {
+        "epoch": 17,
+        "train_loss": 1.4030213008015793,
+        "validation_accuracy": 0.42401500938086306,
+        "validation_macro_f1": 0.3779216120922169
+      }
+    ],
+    "patience": 5,
+    "learning_rate": 0.001,
+    "device": "mps",
+    "training_time_seconds": 0.0
+  },
+  "evaluation": {
+    "accuracy": 0.403580146460537,
+    "precision": 0.40010843857860606,
+    "recall": 0.40162277201383345,
+    "f1": 0.38705151312595515,
+    "macro_f1": 0.38705151312595515,
+    "weighted_f1": 0.38783908193008765,
+    "confusion_matrix": [
+      [
+        155,
+        19,
+        1,
+        27,
+        6,
+        2
+      ],
+      [
+        41,
+        81,
+        16,
+        26,
+        21,
+        25
+      ],
+      [
+        46,
+        61,
+        32,
+        35,
+        8,
+        28
+      ],
+      [
+        65,
+        33,
+        11,
+        67,
+        29,
+        5
+      ],
+      [
+        20,
+        39,
+        5,
+        39,
+        58,
+        18
+      ],
+      [
+        15,
+        29,
+        27,
+        11,
+        25,
+        103
+      ]
+    ],
+    "per_emotion": {
+      "ANG": {
+        "precision": 0.45321637426900585,
+        "recall": 0.7380952380952381,
+        "f1": 0.5615942028985508,
+        "support": 210.0
+      },
+      "DIS": {
+        "precision": 0.30916030534351147,
+        "recall": 0.38571428571428573,
+        "f1": 0.3432203389830508,
+        "support": 210.0
+      },
+      "FEA": {
+        "precision": 0.34782608695652173,
+        "recall": 0.1523809523809524,
+        "f1": 0.2119205298013245,
+        "support": 210.0
+      },
+      "HAP": {
+        "precision": 0.32682926829268294,
+        "recall": 0.319047619047619,
+        "f1": 0.3228915662650602,
+        "support": 210.0
+      },
+      "NEU": {
+        "precision": 0.3945578231292517,
+        "recall": 0.3240223463687151,
+        "f1": 0.3558282208588957,
+        "support": 179.0
+      },
+      "SAD": {
+        "precision": 0.569060773480663,
+        "recall": 0.49047619047619045,
+        "f1": 0.5268542199488491,
+        "support": 210.0
+      }
+    },
+    "label_order": [
+      "ANG",
+      "DIS",
+      "FEA",
+      "HAP",
+      "NEU",
+      "SAD"
+    ]
+  },
+  "model_path": "/Users/lohith/mental-health-speech-app/ml/models/cnn_v1/model.pt",
+  "saved_files": {
+    "model": "/Users/lohith/mental-health-speech-app/ml/models/cnn_v1/model.pt",
+    "config": "/Users/lohith/mental-health-speech-app/ml/models/cnn_v1/config.json",
+    "label_encoder": "/Users/lohith/mental-health-speech-app/ml/models/cnn_v1/label_encoder.pkl",
+    "metrics": "/Users/lohith/mental-health-speech-app/ml/models/cnn_v1/metrics.json"
+  }
+}
