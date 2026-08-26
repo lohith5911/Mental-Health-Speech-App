@@ -63,13 +63,13 @@ def test_analyze_emotion_rejects_invalid_audio() -> None:
 
 
 def test_analyze_emotion_reports_missing_models(tmp_path: Path) -> None:
-    with patch.object(main, "MODEL_PATH", tmp_path / "missing-classifier.pkl"):
+    with patch.object(main, "V4_ARTIFACT_PATHS", (tmp_path / "missing-model.pt",)):
         response = client.post(
             "/api/analyze-emotion",
             files={"file": ("sample.wav", b"audio", "audio/wav")},
         )
 
-    assert response.status_code == 503
+    assert response.status_code == 500
     assert "missing" in response.json()["detail"].lower()
 
 
@@ -77,7 +77,7 @@ def test_analyze_emotion_reports_prediction_failure(tmp_path: Path) -> None:
     wav_path = tmp_path / "sample.wav"
     _write_wav(wav_path)
 
-    with patch.object(main, "predict_emotion_from_file", side_effect=RuntimeError("model error")):
+    with patch.object(main, "predict_v4_emotion", side_effect=RuntimeError("model error")):
         with wav_path.open("rb") as audio:
             response = client.post("/api/analyze-emotion", files={"file": (wav_path.name, audio, "audio/wav")})
 

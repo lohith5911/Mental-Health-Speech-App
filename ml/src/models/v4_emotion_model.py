@@ -6,6 +6,7 @@ import copy
 import json
 import random
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,7 @@ V4_CONFIG_PATH = V4_ARTIFACT_DIR / "config.json"
 V4_MODEL_PATH = V4_ARTIFACT_DIR / "model.pt"
 V4_LABEL_ENCODER_PATH = V4_ARTIFACT_DIR / "label_encoder.pkl"
 V4_METRICS_PATH = V4_ARTIFACT_DIR / "metrics.json"
+V4_ARTIFACT_PATHS = (V4_MODEL_PATH, V4_CONFIG_PATH, V4_LABEL_ENCODER_PATH, V4_METRICS_PATH)
 
 DEFAULT_WAV2VEC_MODEL = "facebook/wav2vec2-base"
 
@@ -371,3 +373,43 @@ def predict_emotion_from_file_v4(
             for idx in range(len(probabilities))
         },
     }
+
+
+class V4EmotionPredictor:
+    """Reusable production predictor that loads the V4 assets once."""
+
+    def __init__(self) -> None:
+        missing = [path.name for path in V4_ARTIFACT_PATHS if not path.is_file()]
+        if missing:
+            raise FileNotFoundError(f"V4 model artifacts are missing: {', '.join(missing)}")
+
+        self.model, self.config, self.device = load_saved_v4_model()
+        self.label_encoder = joblib.load(V4_LABEL_ENCODER_PATH)
+        self.feature_extractor, self.wav2vec_model, _ = load_pretrained_wav2vec(self.config["model_name"])
+        self.wav2vec_model.to(self.device).eval()
+
+    def predict(self, audio_path: str | Path) -> dict[str, Any]:
+        waveform, sample_rate = load_audio(audio_path)
+        embedding = _encode_waveform_batch(
+            [waveform], sample_rate, self.feature_extractor, self.wav2vec_model, self.device
+        )[0]
+        tensor = torch.tensor(embedding, dtype=torch.float32, device=self.device).unsqueeze(0)
+        with torch.no_grad():
+            probabilities = torch.softmax(self.model(tensor), dim=1)[0]
+        predicted_index = int(torch.argmax(probabilities).item())
+        predicted_label = str(self.label_encoder.inverse_transform([predicted_index])[0])
+        return {
+            "emotion": EMOTION_MAP.get(predicted_label, predicted_label),
+            "confidence": float(probabilities[predicted_index].item()),
+        }
+
+
+@lru_cache(maxsize=1)
+def get_v4_predictor() -> V4EmotionPredictor:
+    """Return the process-wide cached V4 production predictor."""
+    return V4EmotionPredictor()
+
+
+def predict_v4_emotion(audio_path: str | Path) -> dict[str, Any]:
+    """Predict emotion and confidence using the cached V4 production model."""
+    return get_v4_predictor().predict(audio_path)

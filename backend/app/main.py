@@ -12,13 +12,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from ml.src.models.emotion_model import MODEL_PATH, predict_emotion_from_file
+from ml.src.models.v4_emotion_model import V4_ARTIFACT_PATHS, predict_v4_emotion
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_DIR = PROJECT_ROOT / "ml" / "models"
-SCALER_PATH = MODEL_DIR / "scaler.pkl"
-LABEL_ENCODER_PATH = MODEL_DIR / "label_encoder.pkl"
+V4_ARTIFACT_DIR = MODEL_DIR / "v4"
 
 ALLOWED_AUDIO_MIME_TYPES = {
     "audio/webm",
@@ -136,9 +135,9 @@ async def analyze_emotion(file: UploadFile = File(...)):
     if suffix not in ALLOWED_AUDIO_SUFFIXES:
         raise HTTPException(status_code=415, detail="Only .wav and .webm audio files are supported.")
 
-    missing_models = [path.name for path in (MODEL_PATH, SCALER_PATH, LABEL_ENCODER_PATH) if not path.is_file()]
+    missing_models = [path.name for path in V4_ARTIFACT_PATHS if not path.is_file()]
     if missing_models:
-        raise HTTPException(status_code=503, detail=f"Emotion model files are missing: {', '.join(missing_models)}")
+        raise HTTPException(status_code=500, detail=f"V4 model files are missing: {', '.join(missing_models)}")
 
     contents = await file.read()
     if not contents:
@@ -155,7 +154,7 @@ async def analyze_emotion(file: UploadFile = File(...)):
                 raise HTTPException(status_code=422, detail=f"Invalid audio file: {exc}") from exc
 
             try:
-                prediction = predict_emotion_from_file(wav_path, model_path=MODEL_PATH)
+                prediction = predict_v4_emotion(wav_path)
             except (ValueError, OSError) as exc:
                 raise HTTPException(status_code=422, detail=f"Invalid audio file: {exc}") from exc
             except Exception as exc:
@@ -165,7 +164,4 @@ async def analyze_emotion(file: UploadFile = File(...)):
             raise
         raise HTTPException(status_code=500, detail="Emotion prediction failed.") from exc
 
-    return {
-        "emotion": prediction["emotion_name"],
-        "confidence": prediction["confidence"],
-    }
+    return prediction
