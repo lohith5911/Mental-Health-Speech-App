@@ -35,6 +35,14 @@ export type EmotionAnalysisResult = {
   confidence: number
 }
 
+export type CheckInRecord = {
+  id: number
+  created_at: string
+  emotion: string
+  confidence: number
+  duration_seconds: number
+}
+
 export const MAX_CHECK_IN_SECONDS = 60
 
 export const appNavItems: NavItem[] = [

@@ -83,3 +83,61 @@ def test_analyze_emotion_reports_prediction_failure(tmp_path: Path) -> None:
 
     assert response.status_code == 500
     assert response.json()["detail"] == "Emotion prediction failed."
+
+
+def test_create_check_in_persists_record(tmp_path: Path) -> None:
+    with patch.object(main, "DATABASE_PATH", tmp_path / "checkins.db"):
+        main.init_db()
+        response = client.post(
+            "/api/check-ins",
+            json={"emotion": "happy", "confidence": 0.91, "duration_seconds": 42},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["emotion"] == "happy"
+    assert body["confidence"] == 0.91
+    assert body["duration_seconds"] == 42
+    assert body["id"] > 0
+
+
+def test_list_check_ins_returns_created_records(tmp_path: Path) -> None:
+    with patch.object(main, "DATABASE_PATH", tmp_path / "checkins.db"):
+        main.init_db()
+        client.post("/api/check-ins", json={"emotion": "happy", "confidence": 0.85, "duration_seconds": 12})
+        client.post("/api/check-ins", json={"emotion": "sad", "confidence": 0.63, "duration_seconds": 30})
+        response = client.get("/api/check-ins")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 2
+    assert [item["emotion"] for item in body] == ["sad", "happy"]
+
+
+def test_get_check_in_by_id_returns_record(tmp_path: Path) -> None:
+    with patch.object(main, "DATABASE_PATH", tmp_path / "checkins.db"):
+        main.init_db()
+        created = client.post(
+            "/api/check-ins",
+            json={"emotion": "neutral", "confidence": 0.74, "duration_seconds": 18},
+        ).json()
+        response = client.get(f"/api/check-ins/{created['id']}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == created["id"]
+    assert body["emotion"] == "neutral"
+
+
+def test_create_check_in_rejects_invalid_values(tmp_path: Path) -> None:
+    with patch.object(main, "DATABASE_PATH", tmp_path / "checkins.db"):
+        main.init_db()
+        response = client.post(
+            "/api/check-ins",
+            json={"emotion": "unknown", "confidence": 1.2, "duration_seconds": 0},
+        )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    error_text = "\n".join(item.get("msg", "") for item in detail)
+    assert "emotion" in error_text.lower() or "confidence" in error_text.lower()

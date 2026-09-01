@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createCheckIn } from '../services'
 import {
   MAX_CHECK_IN_SECONDS,
   type CheckInStatus,
@@ -326,8 +327,21 @@ function useRecording() {
         throw new Error('The backend returned an invalid emotion analysis.')
       }
 
-      setAnalysisResult({ emotion: payload.emotion, confidence: payload.confidence })
-      setSuccessMessage('Emotion analysis completed.')
+      const analysis = {
+        emotion: payload.emotion,
+        confidence: payload.confidence,
+      }
+
+      const savedCheckIn = await createCheckIn({
+        emotion: analysis.emotion,
+        confidence: analysis.confidence,
+        duration_seconds: elapsedSeconds,
+      })
+
+      setAnalysisResult(analysis)
+      setSuccessMessage(
+        `Emotion analysis completed and saved${savedCheckIn ? ' to your history' : ''}.`,
+      )
       setStatus('success')
     } catch (error) {
       setStatus('error')
@@ -337,7 +351,7 @@ function useRecording() {
           : 'The recording could not be analyzed. Check your connection and try again.',
       )
     }
-  }, [audioBlob])
+  }, [audioBlob, elapsedSeconds])
 
   useEffect(() => {
     if (status !== 'recording') {

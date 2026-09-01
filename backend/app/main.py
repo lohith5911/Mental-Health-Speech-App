@@ -1,12 +1,14 @@
 import shutil
+import sqlite3
 import sys
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, field_validator
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -14,10 +16,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from ml.src.models.v4_emotion_model import V4_ARTIFACT_PATHS, predict_v4_emotion
 
-UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+DATABASE_DIR = Path(__file__).resolve().parent.parent / "data"
+DATABASE_DIR.mkdir(parents=True, exist_ok=True)
+DATABASE_PATH = DATABASE_DIR / "checkins.db"
 MODEL_DIR = PROJECT_ROOT / "ml" / "models"
 V4_ARTIFACT_DIR = MODEL_DIR / "v4"
+VALID_EMOTIONS = {"angry", "disgust", "fear", "happy", "neutral", "sad"}
 
 ALLOWED_AUDIO_MIME_TYPES = {
     "audio/webm",
@@ -59,40 +63,111 @@ def health_check():
     }
 
 
-@app.post("/api/check-ins")
-async def upload_check_in(file: UploadFile = File(...)):
-    if file is None or file.filename in (None, ""):
-        raise HTTPException(status_code=400, detail="No audio file was provided.")
+class CheckInCreate(BaseModel):
+    emotion: str
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    duration_seconds: int = Field(default=0, ge=0)
 
-    raw_content_type = (file.content_type or "").split(";", 1)[0].lower()
-    if raw_content_type and raw_content_type not in ALLOWED_AUDIO_MIME_TYPES:
-        raise HTTPException(
-            status_code=415,
-            detail=(
-                "Unsupported audio format. Please upload a common browser audio file such as "
-                "webm, mp4, ogg, wav, or mp3."
-            ),
+    @field_validator("emotion")
+    @classmethod
+    def validate_emotion(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in VALID_EMOTIONS:
+            raise ValueError("Emotion must be one of: angry, disgust, fear, happy, neutral, sad.")
+        return normalized
+
+    @field_validator("confidence")
+    @classmethod
+    def validate_confidence(cls, value: float) -> float:
+        numeric_value = float(value)
+        if numeric_value < 0.0 or numeric_value > 1.0:
+            raise ValueError("Confidence must be between 0.0 and 1.0 inclusive.")
+        return numeric_value
+
+
+def init_db() -> None:
+    DATABASE_DIR.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(DATABASE_PATH)) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS check_ins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                emotion TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                duration_seconds INTEGER NOT NULL
+            )
+            """
         )
+        connection.commit()
 
-    contents = await file.read()
-    if not contents:
-        raise HTTPException(status_code=400, detail="Uploaded audio file is empty.")
 
-    original_name = Path(file.filename).name or "audio"
-    safe_name = "".join(ch if ch.isalnum() or ch in {"_", ".", "-"} else "_" for ch in original_name).strip()
-    if not safe_name:
-        safe_name = "audio"
-
-    check_in_id = uuid4().hex
-    saved_filename = f"{check_in_id}_{safe_name}"
-    save_path = UPLOAD_DIR / saved_filename
-    save_path.write_bytes(contents)
-
+def _serialize_check_in(row: sqlite3.Row) -> dict:
     return {
-        "check_in_id": check_in_id,
-        "status": "uploaded",
-        "filename": saved_filename,
+        "id": row["id"],
+        "created_at": row["created_at"],
+        "emotion": row["emotion"],
+        "confidence": float(row["confidence"]),
+        "duration_seconds": int(row["duration_seconds"]),
     }
+
+
+@app.on_event("startup")
+def startup() -> None:
+    init_db()
+
+
+@app.post("/api/check-ins")
+def create_check_in(payload: CheckInCreate):
+    init_db()
+    created_at = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(str(DATABASE_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        cursor = connection.execute(
+            """
+            INSERT INTO check_ins (created_at, emotion, confidence, duration_seconds)
+            VALUES (?, ?, ?, ?)
+            """,
+            (created_at, payload.emotion, payload.confidence, payload.duration_seconds),
+        )
+        connection.commit()
+        row = connection.execute(
+            "SELECT * FROM check_ins WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=500, detail="Unable to persist check-in.")
+
+    return _serialize_check_in(row)
+
+
+@app.get("/api/check-ins")
+def list_check_ins():
+    init_db()
+    with sqlite3.connect(str(DATABASE_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            "SELECT * FROM check_ins ORDER BY created_at DESC, id DESC"
+        ).fetchall()
+
+    return [_serialize_check_in(row) for row in rows]
+
+
+@app.get("/api/check-ins/{check_in_id}")
+def get_check_in(check_in_id: int):
+    init_db()
+    with sqlite3.connect(str(DATABASE_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            "SELECT * FROM check_ins WHERE id = ?",
+            (check_in_id,),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Check-in not found.")
+
+    return _serialize_check_in(row)
 
 
 def _convert_to_wav(source_path: Path, wav_path: Path) -> None:
