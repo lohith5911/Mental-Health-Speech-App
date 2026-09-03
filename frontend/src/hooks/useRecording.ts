@@ -322,7 +322,12 @@ function useRecording() {
       if (
         typeof payload.emotion !== 'string' ||
         typeof payload.confidence !== 'number' ||
-        !Number.isFinite(payload.confidence)
+        !Number.isFinite(payload.confidence) ||
+        typeof payload.model_version !== 'string' ||
+        !payload.probabilities ||
+        Object.values(payload.probabilities).some(
+          (probability) => typeof probability !== 'number' || !Number.isFinite(probability),
+        )
       ) {
         throw new Error('The backend returned an invalid emotion analysis.')
       }
@@ -330,12 +335,16 @@ function useRecording() {
       const analysis = {
         emotion: payload.emotion,
         confidence: payload.confidence,
+        model_version: payload.model_version,
+        probabilities: payload.probabilities,
       }
 
       const savedCheckIn = await createCheckIn({
         emotion: analysis.emotion,
         confidence: analysis.confidence,
         duration_seconds: elapsedSeconds,
+        model_version: analysis.model_version,
+        probabilities: analysis.probabilities,
       })
 
       setAnalysisResult(analysis)

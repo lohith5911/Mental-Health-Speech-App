@@ -3,10 +3,13 @@ import sqlite3
 import sys
 import subprocess
 import tempfile
+import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
@@ -15,6 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ml.src.models.v4_emotion_model import V4_ARTIFACT_PATHS, predict_v4_emotion
+from app.services.trend_engine import DEFAULT_WINDOW_SIZE, MAX_WINDOW_SIZE, build_trend_insight
 
 DATABASE_DIR = Path(__file__).resolve().parent.parent / "data"
 DATABASE_DIR.mkdir(parents=True, exist_ok=True)
@@ -67,6 +71,8 @@ class CheckInCreate(BaseModel):
     emotion: str
     confidence: float = Field(..., ge=0.0, le=1.0)
     duration_seconds: int = Field(default=0, ge=0)
+    model_version: str | None = None
+    probabilities: dict[str, float] | None = None
 
     @field_validator("emotion")
     @classmethod
@@ -84,6 +90,33 @@ class CheckInCreate(BaseModel):
             raise ValueError("Confidence must be between 0.0 and 1.0 inclusive.")
         return numeric_value
 
+    @field_validator("model_version")
+    @classmethod
+    def validate_model_version(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Model version must be a non-empty string.")
+        return normalized
+
+    @field_validator("probabilities")
+    @classmethod
+    def validate_probabilities(cls, value: dict[str, float] | None) -> dict[str, float] | None:
+        if value is None:
+            return None
+        if set(value) != VALID_EMOTIONS:
+            raise ValueError("Probabilities must contain exactly the six supported emotions.")
+        normalized = {emotion: float(value[emotion]) for emotion in VALID_EMOTIONS}
+        if any(
+            not math.isfinite(probability) or probability < 0.0 or probability > 1.0
+            for probability in normalized.values()
+        ):
+            raise ValueError("Probability values must be between 0.0 and 1.0 inclusive.")
+        if abs(sum(normalized.values()) - 1.0) > 0.01:
+            raise ValueError("Probabilities must sum to approximately 1.0.")
+        return normalized
+
 
 def init_db() -> None:
     DATABASE_DIR.mkdir(parents=True, exist_ok=True)
@@ -95,20 +128,32 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 emotion TEXT NOT NULL,
                 confidence REAL NOT NULL,
-                duration_seconds INTEGER NOT NULL
+                duration_seconds INTEGER NOT NULL,
+                model_version TEXT,
+                probabilities TEXT
             )
             """
         )
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(check_ins)")}
+        if "model_version" not in columns:
+            connection.execute("ALTER TABLE check_ins ADD COLUMN model_version TEXT")
+        if "probabilities" not in columns:
+            connection.execute("ALTER TABLE check_ins ADD COLUMN probabilities TEXT")
         connection.commit()
 
 
 def _serialize_check_in(row: sqlite3.Row) -> dict:
+    probabilities: dict[str, Any] | None = None
+    if row["probabilities"] is not None:
+        probabilities = json.loads(row["probabilities"])
     return {
         "id": row["id"],
         "created_at": row["created_at"],
         "emotion": row["emotion"],
         "confidence": float(row["confidence"]),
         "duration_seconds": int(row["duration_seconds"]),
+        "model_version": row["model_version"],
+        "probabilities": probabilities,
     }
 
 
@@ -125,10 +170,19 @@ def create_check_in(payload: CheckInCreate):
         connection.row_factory = sqlite3.Row
         cursor = connection.execute(
             """
-            INSERT INTO check_ins (created_at, emotion, confidence, duration_seconds)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO check_ins (
+                created_at, emotion, confidence, duration_seconds, model_version, probabilities
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (created_at, payload.emotion, payload.confidence, payload.duration_seconds),
+            (
+                created_at,
+                payload.emotion,
+                payload.confidence,
+                payload.duration_seconds,
+                payload.model_version,
+                json.dumps(payload.probabilities, sort_keys=True) if payload.probabilities is not None else None,
+            ),
         )
         connection.commit()
         row = connection.execute(
@@ -168,6 +222,20 @@ def get_check_in(check_in_id: int):
         raise HTTPException(status_code=404, detail="Check-in not found.")
 
     return _serialize_check_in(row)
+
+
+@app.get("/api/insights/trends")
+def get_trends(
+    window_size: int = Query(default=DEFAULT_WINDOW_SIZE, ge=1, le=MAX_WINDOW_SIZE),
+):
+    init_db()
+    with sqlite3.connect(str(DATABASE_PATH)) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            "SELECT emotion, probabilities FROM check_ins ORDER BY created_at DESC, id DESC"
+        ).fetchall()
+
+    return build_trend_insight(rows, window_size=window_size)
 
 
 def _convert_to_wav(source_path: Path, wav_path: Path) -> None:

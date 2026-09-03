@@ -31,6 +31,8 @@ export async function createCheckIn(payload: {
   emotion: string
   confidence: number
   duration_seconds: number
+  model_version?: string
+  probabilities?: Record<string, number>
 }): Promise<CheckInRecord> {
   return apiFetch<CheckInRecord>('/api/check-ins', {
     method: 'POST',

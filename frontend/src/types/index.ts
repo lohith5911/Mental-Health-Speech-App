@@ -33,6 +33,8 @@ export type CheckInStatus =
 export type EmotionAnalysisResult = {
   emotion: string
   confidence: number
+  model_version: string
+  probabilities: Record<string, number>
 }
 
 export type CheckInRecord = {
@@ -41,6 +43,8 @@ export type CheckInRecord = {
   emotion: string
   confidence: number
   duration_seconds: number
+  model_version: string | null
+  probabilities: Record<string, number> | null
 }
 
 export const MAX_CHECK_IN_SECONDS = 60

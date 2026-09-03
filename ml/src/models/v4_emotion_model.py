@@ -398,9 +398,15 @@ class V4EmotionPredictor:
             probabilities = torch.softmax(self.model(tensor), dim=1)[0]
         predicted_index = int(torch.argmax(probabilities).item())
         predicted_label = str(self.label_encoder.inverse_transform([predicted_index])[0])
+        probability_map = {}
+        for idx in range(len(probabilities)):
+            label = str(self.label_encoder.inverse_transform([idx])[0])
+            probability_map[EMOTION_MAP.get(label, label)] = float(probabilities[idx].item())
         return {
             "emotion": EMOTION_MAP.get(predicted_label, predicted_label),
             "confidence": float(probabilities[predicted_index].item()),
+            "model_version": "v4",
+            "probabilities": probability_map,
         }
 
 
