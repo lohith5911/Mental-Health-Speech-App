@@ -9,6 +9,28 @@ export type AppRoutePath =
   | '/profile'
   | '/resources'
 
+export type Emotion =
+  | 'angry'
+  | 'disgust'
+  | 'fear'
+  | 'happy'
+  | 'neutral'
+  | 'sad'
+
+export type TrendStatus = 'stable' | 'change_detected' | 'significant_change'
+
+export interface TrendInsight {
+  status: string
+  sample_size: number
+  window_size: number
+  baseline: Record<Emotion, number>
+  recent: Record<Emotion, number>
+  change: Record<Emotion, number>
+  change_score: number
+  trend: TrendStatus
+  persistent_emotions: Emotion[]
+}
+
 export type NavItem = {
   label: string
   path: AppRoutePath

@@ -1,4 +1,4 @@
-import type { CheckInRecord } from '../types'
+import type { CheckInRecord, TrendInsight } from '../types'
 
 const API_BASE_URL = 'http://127.0.0.1:8000'
 
@@ -25,6 +25,11 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 export async function fetchCheckIns(): Promise<CheckInRecord[]> {
   return apiFetch<CheckInRecord[]>('/api/check-ins')
+}
+
+export async function fetchTrendInsights(windowSize?: number): Promise<TrendInsight> {
+  const query = windowSize === undefined ? '' : `?window_size=${windowSize}`
+  return apiFetch<TrendInsight>(`/api/insights/trends${query}`)
 }
 
 export async function createCheckIn(payload: {
