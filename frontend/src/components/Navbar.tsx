@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { appNavItems, publicNavItems } from '../types'
+import { useAuth } from '../context/useAuth'
 
 type NavbarProps = {
   variant: 'public' | 'app'
@@ -8,6 +9,7 @@ type NavbarProps = {
 
 function Navbar({ variant }: NavbarProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const { logout } = useAuth()
   const items = variant === 'public' ? publicNavItems : appNavItems
 
   function closeMenu() {
@@ -49,6 +51,18 @@ function Navbar({ variant }: NavbarProps) {
             {item.label}
           </NavLink>
         ))}
+        {variant === 'app' && (
+          <button
+            type="button"
+            className="nav-link nav-button"
+            onClick={() => {
+              closeMenu()
+              logout()
+            }}
+          >
+            Log out
+          </button>
+        )}
       </nav>
     </header>
   )

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createCheckIn } from '../services'
+import { analyzeAndSaveCheckIn } from '../services'
 import {
   MAX_CHECK_IN_SECONDS,
   type CheckInStatus,
-  type EmotionAnalysisResult,
+  type AnalyzeAndSaveResponse,
 } from '../types'
 
 const PREFERRED_MIME_TYPES = [
@@ -76,7 +76,7 @@ function useRecording() {
   const [mimeType, setMimeType] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
-  const [analysisResult, setAnalysisResult] = useState<EmotionAnalysisResult | null>(null)
+  const [analysisResult, setAnalysisResult] = useState<AnalyzeAndSaveResponse | null>(null)
   const [isRequestingMic, setIsRequestingMic] = useState(false)
 
   const statusRef = useRef<CheckInStatus>('idle')
@@ -289,68 +289,17 @@ function useRecording() {
     setStatus('uploading')
 
     try {
-      const formData = new FormData()
-      const extension = audioBlob.type.includes('webm')
-        ? 'webm'
-        : audioBlob.type.includes('mp4')
-          ? 'mp4'
-          : audioBlob.type.includes('ogg')
-            ? 'ogg'
-            : audioBlob.type.includes('wav')
-              ? 'wav'
-              : audioBlob.type.includes('mpeg') || audioBlob.type.includes('mp3')
-                ? 'mp3'
-                : 'webm'
-
-      formData.append('file', audioBlob, `check-in-${Date.now()}.${extension}`)
-
-      const response = await fetch('http://127.0.0.1:8000/api/analyze-emotion', {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null)
-        throw new Error(
-          errorBody?.detail || 'The recording could not be analyzed. Please try again.',
-        )
-      }
-
       setStatus('analyzing')
-      const payload = (await response.json()) as Partial<EmotionAnalysisResult>
-
-      if (
-        typeof payload.emotion !== 'string' ||
-        typeof payload.confidence !== 'number' ||
-        !Number.isFinite(payload.confidence) ||
-        typeof payload.model_version !== 'string' ||
-        !payload.probabilities ||
-        Object.values(payload.probabilities).some(
-          (probability) => typeof probability !== 'number' || !Number.isFinite(probability),
-        )
-      ) {
-        throw new Error('The backend returned an invalid emotion analysis.')
-      }
-
-      const analysis = {
-        emotion: payload.emotion,
-        confidence: payload.confidence,
-        model_version: payload.model_version,
-        probabilities: payload.probabilities,
-      }
-
-      const savedCheckIn = await createCheckIn({
-        emotion: analysis.emotion,
-        confidence: analysis.confidence,
-        duration_seconds: elapsedSeconds,
-        model_version: analysis.model_version,
-        probabilities: analysis.probabilities,
-      })
-
+      const analysis = await analyzeAndSaveCheckIn(audioBlob, elapsedSeconds)
       setAnalysisResult(analysis)
-      setSuccessMessage(
-        `Emotion analysis completed and saved${savedCheckIn ? ' to your history' : ''}.`,
-      )
+      const qualityMessages = {
+        usable: 'Audio quality looks usable for this check-in.',
+        low_signal: 'The recording signal is low. Consider recording again in a quieter environment.',
+        mostly_silent: 'The recording contains mostly silence. Please try recording again.',
+        noisy_signal: 'The recording contains substantial background noise. Consider recording again somewhere quieter.',
+        insufficient_audio: 'The recording is too short to analyze reliably.',
+      }
+      setSuccessMessage(qualityMessages[analysis.quality.status])
       setStatus('success')
     } catch (error) {
       setStatus('error')

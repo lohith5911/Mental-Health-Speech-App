@@ -1,5 +1,6 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout'
+import { useAuth } from './context/useAuth'
 import DailyCheckIn from './pages/DailyCheckIn'
 import Dashboard from './pages/Dashboard'
 import History from './pages/History'
@@ -10,16 +11,30 @@ import Register from './pages/Register'
 import Resources from './pages/Resources'
 import Results from './pages/Results'
 
+function ProtectedRoute() {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="loading-state">Loading your account…</div>
+  return user ? <AppLayout variant="app" /> : <Navigate to="/login" replace />
+}
+
+function PublicOnlyRoute() {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="loading-state">Loading your account…</div>
+  return user ? <Navigate to="/dashboard" replace /> : <Outlet />
+}
+
 function App() {
   return (
     <Routes>
       <Route element={<AppLayout variant="public" />}>
         <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        <Route element={<PublicOnlyRoute />}>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+        </Route>
       </Route>
 
-      <Route element={<AppLayout variant="app" />}>
+      <Route element={<ProtectedRoute />}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/check-in" element={<DailyCheckIn />} />
         <Route path="/results" element={<Results />} />

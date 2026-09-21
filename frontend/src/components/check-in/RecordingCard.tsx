@@ -1,4 +1,4 @@
-import type { CheckInStatus, EmotionAnalysisResult } from '../../types'
+import type { AnalyzeAndSaveResponse, CheckInStatus } from '../../types'
 import MicrophoneIcon from './MicrophoneIcon'
 
 type RecordingCardProps = {
@@ -12,7 +12,7 @@ type RecordingCardProps = {
   onStop: () => void
   onRecordAgain: () => void
   onContinue: () => void
-  analysisResult: EmotionAnalysisResult | null
+  analysisResult: AnalyzeAndSaveResponse | null
 }
 
 const STATUS_COPY: Record<

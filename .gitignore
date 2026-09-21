@@ -1,2 +1,11 @@
 ml/data/
 backend/data/
+.DS_Store
+.vscode/
+.env
+.env.*
+!.env.example
+**/.venv/
+**/node_modules/
+**/uploads/
+ml/depression/data/

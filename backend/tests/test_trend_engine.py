@@ -20,6 +20,15 @@ from app.services.trend_engine import (
 client = TestClient(main.app)
 
 
+def auth_headers(email: str = "trend@example.com") -> dict[str, str]:
+    response = client.post(
+        "/api/auth/register",
+        json={"email": email, "display_name": "Trend User", "password": "correct horse battery staple"},
+    )
+    assert response.status_code == 201
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
 def vector(**overrides: float) -> dict[str, float]:
     values = {emotion: 0.0 for emotion in EMOTIONS}
     values.update(overrides)
@@ -33,14 +42,14 @@ def row(probabilities: dict[str, float] | None = None, emotion: str = "neutral")
     }
 
 
-def insert_rows(database_path: Path, rows: list[dict[str, object]]) -> None:
+def insert_rows(database_path: Path, rows: list[dict[str, object]], user_id: int) -> None:
     main.init_db()
     with sqlite3.connect(database_path) as connection:
         for index, check_in in enumerate(rows):
             connection.execute(
                 """
-                INSERT INTO check_ins (created_at, emotion, confidence, duration_seconds, probabilities)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO check_ins (created_at, emotion, confidence, duration_seconds, probabilities, user_id)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     f"2026-09-{index + 1:02d}T12:00:00+00:00",
@@ -48,6 +57,7 @@ def insert_rows(database_path: Path, rows: list[dict[str, object]]) -> None:
                     0.8,
                     10,
                     check_in["probabilities"],
+                    user_id,
                 ),
             )
         connection.commit()
@@ -55,7 +65,8 @@ def insert_rows(database_path: Path, rows: list[dict[str, object]]) -> None:
 
 def test_zero_check_ins_returns_empty_valid_response(tmp_path: Path) -> None:
     with patch.object(main, "DATABASE_PATH", tmp_path / "checkins.db"):
-        response = client.get("/api/insights/trends")
+        headers = auth_headers()
+        response = client.get("/api/insights/trends", headers=headers)
 
     body = response.json()
     assert response.status_code == 200
@@ -73,8 +84,10 @@ def test_zero_check_ins_returns_empty_valid_response(tmp_path: Path) -> None:
 def test_one_check_in_uses_all_available_data(tmp_path: Path) -> None:
     check_in = row(vector(happy=0.7, neutral=0.3), emotion="happy")
     with patch.object(main, "DATABASE_PATH", tmp_path / "checkins.db"):
-        insert_rows(tmp_path / "checkins.db", [check_in])
-        body = client.get("/api/insights/trends").json()
+        headers = auth_headers()
+        user_id = sqlite3.connect(tmp_path / "checkins.db").execute("SELECT id FROM users").fetchone()[0]
+        insert_rows(tmp_path / "checkins.db", [check_in], user_id)
+        body = client.get("/api/insights/trends", headers=headers).json()
 
     assert body["sample_size"] == 1
     assert body["baseline"] == vector(happy=0.7, neutral=0.3)
@@ -85,8 +98,10 @@ def test_one_check_in_uses_all_available_data(tmp_path: Path) -> None:
 def test_fewer_than_seven_check_ins_use_all_rows(tmp_path: Path) -> None:
     rows = [row(vector(neutral=1.0)) for _ in range(3)]
     with patch.object(main, "DATABASE_PATH", tmp_path / "checkins.db"):
-        insert_rows(tmp_path / "checkins.db", rows)
-        body = client.get("/api/insights/trends").json()
+        headers = auth_headers()
+        user_id = sqlite3.connect(tmp_path / "checkins.db").execute("SELECT id FROM users").fetchone()[0]
+        insert_rows(tmp_path / "checkins.db", rows, user_id)
+        body = client.get("/api/insights/trends", headers=headers).json()
 
     assert body["sample_size"] == 3
     assert body["window_size"] == 7
@@ -96,8 +111,10 @@ def test_fewer_than_seven_check_ins_use_all_rows(tmp_path: Path) -> None:
 def test_exactly_seven_check_ins_use_default_window(tmp_path: Path) -> None:
     rows = [row(vector(happy=1.0)) for _ in range(7)]
     with patch.object(main, "DATABASE_PATH", tmp_path / "checkins.db"):
-        insert_rows(tmp_path / "checkins.db", rows)
-        body = client.get("/api/insights/trends").json()
+        headers = auth_headers()
+        user_id = sqlite3.connect(tmp_path / "checkins.db").execute("SELECT id FROM users").fetchone()[0]
+        insert_rows(tmp_path / "checkins.db", rows, user_id)
+        body = client.get("/api/insights/trends", headers=headers).json()
 
     assert body["sample_size"] == 7
     assert body["recent"] == vector(happy=1.0)
@@ -106,8 +123,10 @@ def test_exactly_seven_check_ins_use_default_window(tmp_path: Path) -> None:
 def test_more_than_seven_check_ins_limit_recent_window(tmp_path: Path) -> None:
     rows = [row(vector(happy=1.0)) for _ in range(3)] + [row(vector(sad=1.0)) for _ in range(7)]
     with patch.object(main, "DATABASE_PATH", tmp_path / "checkins.db"):
-        insert_rows(tmp_path / "checkins.db", rows)
-        body = client.get("/api/insights/trends?window_size=7").json()
+        headers = auth_headers()
+        user_id = sqlite3.connect(tmp_path / "checkins.db").execute("SELECT id FROM users").fetchone()[0]
+        insert_rows(tmp_path / "checkins.db", rows, user_id)
+        body = client.get("/api/insights/trends?window_size=7", headers=headers).json()
 
     assert body["sample_size"] == 10
     assert body["recent"] == vector(sad=1.0)
@@ -171,8 +190,9 @@ def test_legacy_null_probabilities_fall_back_to_winning_label() -> None:
 
 def test_invalid_window_sizes_are_rejected(tmp_path: Path) -> None:
     with patch.object(main, "DATABASE_PATH", tmp_path / "checkins.db"):
-        below_minimum = client.get("/api/insights/trends?window_size=0")
-        above_maximum = client.get("/api/insights/trends?window_size=31")
+        headers = auth_headers()
+        below_minimum = client.get("/api/insights/trends?window_size=0", headers=headers)
+        above_maximum = client.get("/api/insights/trends?window_size=31", headers=headers)
 
     assert below_minimum.status_code == 422
     assert above_maximum.status_code == 422
@@ -180,7 +200,7 @@ def test_invalid_window_sizes_are_rejected(tmp_path: Path) -> None:
 
 def test_custom_maximum_window_size_is_accepted(tmp_path: Path) -> None:
     with patch.object(main, "DATABASE_PATH", tmp_path / "checkins.db"):
-        response = client.get("/api/insights/trends?window_size=30")
+        response = client.get("/api/insights/trends?window_size=30", headers=auth_headers())
 
     assert response.status_code == 200
     assert response.json()["window_size"] == 30

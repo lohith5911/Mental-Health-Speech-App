@@ -9,6 +9,19 @@ export type AppRoutePath =
   | '/profile'
   | '/resources'
 
+export type User = {
+  id: number
+  email: string
+  display_name: string
+  created_at: string
+}
+
+export type AuthResponse = {
+  access_token: string
+  token_type: string
+  user: User
+}
+
 export type Emotion =
   | 'angry'
   | 'disgust'
@@ -38,7 +51,6 @@ export type NavItem = {
 
 export const publicNavItems: NavItem[] = [
   { label: 'Home', path: '/' },
-  { label: 'Daily check-in', path: '/check-in' },
   { label: 'Log in', path: '/login' },
   { label: 'Register', path: '/register' },
 ]
@@ -57,6 +69,34 @@ export type EmotionAnalysisResult = {
   confidence: number
   model_version: string
   probabilities: Record<string, number>
+  acoustic_features: AcousticFeatures
+}
+
+export type CheckInQualityStatus =
+  | 'usable'
+  | 'low_signal'
+  | 'mostly_silent'
+  | 'noisy_signal'
+  | 'insufficient_audio'
+
+export type CheckInQuality = {
+  status: CheckInQualityStatus
+  reasons: string[]
+}
+
+export type AcousticFeatures = {
+  duration_seconds: number
+  rms_mean: number
+  rms_std: number
+  zcr_mean: number
+  zcr_std: number
+  pitch_mean_hz: number | null
+  pitch_std_hz: number | null
+  pitch_range_hz: number | null
+  silence_ratio: number
+  speaking_rate_proxy: number | null
+  is_silent: boolean
+  is_noisy: boolean
 }
 
 export type CheckInRecord = {
@@ -67,6 +107,15 @@ export type CheckInRecord = {
   duration_seconds: number
   model_version: string | null
   probabilities: Record<string, number> | null
+  acoustic_features: AcousticFeatures | null
+  quality?: CheckInQuality | null
+}
+
+export type AnalyzeAndSaveResponse = CheckInRecord & {
+  model_version: string
+  probabilities: Record<string, number>
+  acoustic_features: AcousticFeatures
+  quality: CheckInQuality
 }
 
 export const MAX_CHECK_IN_SECONDS = 60

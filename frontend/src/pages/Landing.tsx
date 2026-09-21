@@ -6,29 +6,29 @@ function Landing() {
     <section className="page landing-page">
       <PageHeader
         title="AI-powered mental health screening through daily speech"
-        description="A calm space to check in with your voice over time. Screens and history will appear here after later features are connected."
+        description="A calm space to check in with your voice, review speech-derived signals, and notice personal patterns over time."
       />
 
       <div className="card-grid">
         <article className="info-card">
           <h2>Daily check-in</h2>
           <p>
-            Speak a short update each day. Recording and analysis are not
-            enabled in this foundation build.
+            Speak naturally for a short daily check-in. The app analyzes
+            emotion signals, acoustic measurements, and recording quality.
           </p>
         </article>
         <article className="info-card">
           <h2>Private by design</h2>
           <p>
-            Sign-in, storage, and screening results will be added in later
-            steps. Nothing is saved yet.
+            Your authenticated account keeps your check-ins and longitudinal
+            history separate from other users.
           </p>
         </article>
         <article className="info-card">
           <h2>Support, not diagnosis</h2>
           <p>
-            The app will help you notice patterns and find resources. It will
-            not replace a clinician.
+            Use the results for self-monitoring and reflection. They do not
+            diagnose depression or any other mental-health condition.
           </p>
         </article>
       </div>
